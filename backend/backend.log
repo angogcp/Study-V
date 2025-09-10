@@ -1,0 +1,11 @@
+nohup: ignoring input
+
+> video-learning-backend@1.0.0 start
+> node server.js
+
+[dotenv@17.2.2] injecting env (5) from .env -- tip: 📡 auto-backup env with Radar: https://dotenvx.com/radar
+Database initialized successfully!
+Default admin account: admin@example.com / admin123
+🚀 Server is running on port 5000
+🌐 API available at: http://localhost:5000/api
+🏥 Database: SQLite3 local storage
