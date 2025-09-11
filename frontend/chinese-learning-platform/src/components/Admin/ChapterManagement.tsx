@@ -12,6 +12,17 @@ import toast from 'react-hot-toast';
 import { Download, Upload } from 'lucide-react';
 import Papa from 'papaparse';
 import { Search } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+const chapterSchema = z.object({
+  subject_id: z.number().min(1, '请选择科目'),
+  grade_level: z.string().min(1, '请选择年级'),
+  name: z.string().min(1, '请输入章节名称'),
+  sort_order: z.number().min(0, '排序必须大于等于0'),
+});
 
 function ChapterManagement() {
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -19,11 +30,51 @@ function ChapterManagement() {
   const [loading, setLoading] = useState(true);
   const [editingChapter, setEditingChapter] = useState<Partial<Chapter> | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState<number | null>(null);
+  const [selectedGrade, setSelectedGrade] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+  const gradeLevels = ['初中1', '初中2', '初中3'];
+  const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm<z.infer<typeof chapterSchema>>({
+    resolver: zodResolver(chapterSchema),
+  });
+
+  useEffect(() => {
+    if (editingChapter) {
+      reset({
+        subject_id: editingChapter.subject_id ?? 0,
+        grade_level: editingChapter.grade_level ?? '',
+        name: editingChapter.name ?? '',
+        sort_order: editingChapter.sort_order ?? 0,
+      });
+    } else {
+      reset();
+    }
+  }, [editingChapter, reset]);
+
+  // Replace the existing handleSubmit with this onSubmit
+  const onSubmit = async (data) => {
+    try {
+      if (editingChapter?.id) {
+        await ChapterService.updateChapter(editingChapter.id, data);
+      } else {
+        await ChapterService.createChapter(data);
+      }
+      setEditingChapter(null);
+      fetchData();
+      toast.success('Chapter saved successfully');
+    } catch (error) {
+      toast.error('Failed to save chapter');
+    }
+  };
 
   useEffect(() => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedSubject, selectedGrade]);
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -40,23 +91,7 @@ function ChapterManagement() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingChapter) return;
-
-    try {
-      if (editingChapter.id) {
-        await ChapterService.updateChapter(editingChapter.id, editingChapter);
-      } else {
-        await ChapterService.createChapter(editingChapter);
-      }
-      setEditingChapter(null);
-      fetchData();
-      toast.success('Chapter saved successfully');
-    } catch (error) {
-      toast.error('Failed to save chapter');
-    }
-  };
+  // The form in the dialog uses handleSubmit(onSubmit)
 
   const handleDelete = async (id: number) => {
     if (!confirm('Are you sure you want to delete this chapter?')) return;
@@ -129,6 +164,16 @@ function ChapterManagement() {
     link.click();
     document.body.removeChild(link);
   };
+  const filteredChapters = chapters.filter(chapter => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      (chapter.name.toLowerCase().includes(searchLower) || chapter.subject_name_chinese.toLowerCase().includes(searchLower)) &&
+      (selectedSubject ? chapter.subject_id === selectedSubject : true) &&
+      (selectedGrade ? chapter.grade_level === selectedGrade : true)
+    );
+  });
+  const totalPages = Math.ceil(filteredChapters.length / pageSize);
+  const paginatedChapters = filteredChapters.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-4">
@@ -142,10 +187,10 @@ function ChapterManagement() {
               <DialogHeader>
                 <DialogTitle>{editingChapter?.id ? 'Edit Chapter' : 'Add Chapter'}</DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                 <div>
-                  <Label htmlFor="subject_id">Subject</Label>
-                  <Select value={editingChapter?.subject_id?.toString()} onValueChange={(value) => setEditingChapter({ ...editingChapter, subject_id: parseInt(value) })}>
+                  <Label htmlFor="subject_id">科目</Label>
+                  <Select onValueChange={(value) => setValue('subject_id', parseInt(value))} >
                     <SelectTrigger>
                       <SelectValue placeholder="Select subject" />
                     </SelectTrigger>
@@ -155,10 +200,11 @@ function ChapterManagement() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {errors.subject_id && <p className="text-red-500">{errors.subject_id.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="grade_level">Grade Level</Label>
-                  <Select value={editingChapter?.grade_level} onValueChange={(value) => setEditingChapter({ ...editingChapter, grade_level: value })}>
+                  <Label htmlFor="grade_level">年级</Label>
+                  <Select onValueChange={(value) => setValue('grade_level', value)} >
                     <SelectTrigger>
                       <SelectValue placeholder="Select grade" />
                     </SelectTrigger>
@@ -168,16 +214,19 @@ function ChapterManagement() {
                       <SelectItem value="初中3">初中3</SelectItem>
                     </SelectContent>
                   </Select>
+                  {errors.grade_level && <p className="text-red-500">{errors.grade_level.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="name">Name</Label>
-                  <Input id="name" value={editingChapter?.name || ''} onChange={(e) => setEditingChapter({ ...editingChapter, name: e.target.value })} required />
+                  <Label htmlFor="name">名称</Label>
+                  <Input {...register('name')} />
+                  {errors.name && <p className="text-red-500">{errors.name.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="sort_order">Sort Order</Label>
-                  <Input id="sort_order" type="number" value={editingChapter?.sort_order || 0} onChange={(e) => setEditingChapter({ ...editingChapter, sort_order: parseInt(e.target.value) })} />
+                  <Label htmlFor="sort_order">排序</Label>
+                  <Input type="number" {...register('sort_order', { valueAsNumber: true })} />
+                  {errors.sort_order && <p className="text-red-500">{errors.sort_order.message}</p>}
                 </div>
-                <Button type="submit">Save</Button>
+                <Button type="submit">保存</Button>
               </form>
             </DialogContent>
           </Dialog>
@@ -202,44 +251,73 @@ function ChapterManagement() {
           </div>
         </div>
       </div>
-      <div className="mb-4">
+      <div className="flex space-x-4 mb-4">
         <Input 
           placeholder="Search by name or subject" 
           value={searchTerm} 
           onChange={(e) => setSearchTerm(e.target.value)} 
           className="max-w-sm" 
         />
+        <Select value={selectedSubject ? selectedSubject.toString() : ''} onValueChange={(v) => setSelectedSubject(v ? parseInt(v) : null)}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="选择科目" />
+          </SelectTrigger>
+          <SelectContent>
+            {subjects.map((subject) => (
+              <SelectItem key={subject.id} value={subject.id.toString()}>
+                {subject.name_chinese}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={selectedGrade || ''} onValueChange={setSelectedGrade}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="选择年级" />
+          </SelectTrigger>
+          <SelectContent>
+            {gradeLevels.map((level) => (
+              <SelectItem key={level} value={level}>{level}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       {loading ? (
         <p>Loading...</p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>Subject</TableHead>
-              <TableHead>Grade</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Sort Order</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {chapters.map((chapter) => (
-              <TableRow key={chapter.id}>
-                <TableCell>{chapter.id}</TableCell>
-                <TableCell>{chapter.subject_name_chinese}</TableCell>
-                <TableCell>{chapter.grade_level}</TableCell>
-                <TableCell>{chapter.name}</TableCell>
-                <TableCell>{chapter.sort_order}</TableCell>
-                <TableCell>
-                  <Button variant="outline" onClick={() => setEditingChapter(chapter)}>Edit</Button>
-                  <Button variant="destructive" onClick={() => handleDelete(chapter.id)}>Delete</Button>
-                </TableCell>
+        <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead>
+                <TableHead>Subject</TableHead>
+                <TableHead>Grade</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Sort Order</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {paginatedChapters.map((chapter) => (
+                <TableRow key={chapter.id}>
+                  <TableCell>{chapter.id}</TableCell>
+                  <TableCell>{chapter.subject_name_chinese}</TableCell>
+                  <TableCell>{chapter.grade_level}</TableCell>
+                  <TableCell>{chapter.name}</TableCell>
+                  <TableCell>{chapter.sort_order}</TableCell>
+                  <TableCell>
+                    <Button variant="outline" onClick={() => setEditingChapter(chapter)}>Edit</Button>
+                    <Button variant="destructive" onClick={() => handleDelete(chapter.id)}>Delete</Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <div className="flex justify-between mt-4">
+            <Button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)}>上一页</Button>
+            <span>第 {currentPage} 页 / 共 {totalPages} 页</span>
+            <Button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)}>下一页</Button>
+          </div>
+        </>
       )}
     </div>
   );

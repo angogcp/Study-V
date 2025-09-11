@@ -20,6 +20,8 @@ import {
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+// Add to imports
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -36,11 +38,23 @@ const Dashboard: React.FC = () => {
     queryFn: SubjectService.getAllSubjects,
   });
 
+  // Correct placement of chartData after queries
   // Fetch recent videos
   const { data: recentVideos } = useQuery({
     queryKey: ['recent-videos'],
     queryFn: () => VideoService.getAllVideos({ limit: 6 }),
   });
+
+  const chartData = subjects?.map((subject) => {
+    const subjectStats = stats?.bySubject?.find(
+      (s) => s.subject_name === subject.name_chinese
+    );
+    return {
+      name: subject.name_chinese,
+      progress: subjectStats?.avg_progress || 0,
+      color: subject.color_code,
+    };
+  }) || [];
 
   const formatWatchTime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -143,41 +157,23 @@ const Dashboard: React.FC = () => {
               查看各学科的学习情况
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {subjects?.map((subject) => {
-              const subjectStats = stats?.bySubject?.find(
-                (s) => s.subject_name === subject.name_chinese
-              );
-              const progress = subjectStats?.avg_progress || 0;
-              
-              return (
-                <div key={subject.id} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <div 
-                        className="w-3 h-3 rounded-full" 
-                        style={{ backgroundColor: subject.color_code }}
-                      />
-                      <span className="font-medium">{subject.name_chinese}</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">
-                      {Math.round(progress)}%
-                    </span>
-                  </div>
-                  <Progress value={progress} className="h-2" />
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>
-                      已学: {subjectStats?.videos_watched || 0} 个视频
-                    </span>
-                    <span>
-                      完成: {subjectStats?.completed_count || 0} 个
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-            
-            {(!subjects || subjects.length === 0) && (
+
+          <CardContent>
+            {subjects && subjects.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="progress" radius={[4, 4, 0, 0]}>
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
               <p className="text-center text-muted-foreground py-4">
                 暂无学科数据
               </p>

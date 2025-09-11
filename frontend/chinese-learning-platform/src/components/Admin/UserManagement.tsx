@@ -11,66 +11,54 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { toast } from 'react-hot-toast';
 import { Pencil, Trash2, Plus } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 const roles = ['student', 'admin'] as const;
 const gradeLevels = ['初中1', '初中2', '初中3'] as const;
 
-type FormData = {
-  id?: string;
-  email: string;
-  password?: string;
-  fullName: string;
-  gradeLevel: '初中1' | '初中2' | '初中3';
-  role: 'student' | 'admin';
-};
+const formSchema = z.object({
+  email: z.string().email('无效的邮箱格式'),
+  password: z.string().optional().refine((val) => !val || val.length >= 6, { message: '密码至少6位' }),
+  fullName: z.string().min(1, '姓名不能为空'),
+  gradeLevel: z.enum(gradeLevels),
+  role: z.enum(roles),
+});
 
 const UserManagement: React.FC = () => {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [formData, setFormData] = useState<FormData>({
-    email: '',
-    password: '',
-    fullName: '',
-    gradeLevel: '初中1',
-    role: 'student',
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  const { data: usersData, isLoading } = useQuery({
+    queryKey: ['users', searchTerm, currentPage],
+    queryFn: () => UserService.getAllUsers({ search: searchTerm, page: currentPage, limit: itemsPerPage }),
   });
 
-  const { data: users } = useQuery({
-    queryKey: ['users'],
-    queryFn: UserService.getAllUsers,
-  });
-
-  useEffect(() => {
-    if (editingUser) {
-      setFormData({
-        id: editingUser.id,
-        email: editingUser.email,
-        fullName: editingUser.fullName,
-        gradeLevel: editingUser.gradeLevel,
-        role: editingUser.role,
-      });
-      setIsDialogOpen(true);
-    }
-  }, [editingUser]);
+  const users = usersData?.users || [];
+  const totalPages = usersData?.totalPages || 1;
 
   const createMutation = useMutation({
-    mutationFn: (data: FormData) => UserService.createUser(data),
+    mutationFn: UserService.createUser,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setIsDialogOpen(false);
-      resetForm();
+      reset();
       toast.success('用户添加成功');
     },
     onError: () => toast.error('添加用户失败'),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: FormData) => UserService.updateUser(id!, data),
+    mutationFn: ({ id, ...data }: any) => UserService.updateUser(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setIsDialogOpen(false);
-      resetForm();
+      reset();
       toast.success('用户更新成功');
     },
     onError: () => toast.error('更新用户失败'),
@@ -85,23 +73,27 @@ const UserManagement: React.FC = () => {
     onError: () => toast.error('删除用户失败'),
   });
 
-  const resetForm = () => {
-    setFormData({
-      email: '',
-      password: '',
-      fullName: '',
-      gradeLevel: '初中1',
-      role: 'student',
-    });
-    setEditingUser(null);
-  };
+  const { register, handleSubmit, formState: { errors }, setValue, reset } = useForm({
+    resolver: zodResolver(formSchema),
+  });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
     if (editingUser) {
-      updateMutation.mutate(formData);
+      setValue('email', editingUser.email);
+      setValue('fullName', editingUser.fullName);
+      setValue('gradeLevel', editingUser.gradeLevel);
+      setValue('role', editingUser.role);
+      setIsDialogOpen(true);
     } else {
-      createMutation.mutate(formData);
+      reset();
+    }
+  }, [editingUser, setValue, reset]);
+
+  const onSubmit = (data: any) => {
+    if (editingUser) {
+      updateMutation.mutate({ id: editingUser.id, ...data });
+    } else {
+      createMutation.mutate(data);
     }
   };
 
@@ -111,7 +103,7 @@ const UserManagement: React.FC = () => {
         <h1 className="text-2xl font-bold">用户管理</h1>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={resetForm}>
+            <Button onClick={() => { reset(); setEditingUser(null); }}>
               <Plus className="mr-2 h-4 w-4" />
               添加用户
             </Button>
@@ -120,22 +112,25 @@ const UserManagement: React.FC = () => {
             <DialogHeader>
               <DialogTitle>{editingUser ? '编辑用户' : '添加用户'}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div>
                 <Label htmlFor="email">邮箱</Label>
-                <Input id="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required />
+                <Input id="email" {...register('email')} />
+                {errors.email && <p className="text-red-500 text-sm">{errors.email.message}</p>}
               </div>
               <div>
                 <Label htmlFor="password">密码 {editingUser ? '(可选)' : ''}</Label>
-                <Input id="password" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required={!editingUser} />
+                <Input id="password" type="password" {...register('password')} />
+                {errors.password && <p className="text-red-500 text-sm">{errors.password.message}</p>}
               </div>
               <div>
                 <Label htmlFor="fullName">姓名</Label>
-                <Input id="fullName" value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} required />
+                <Input id="fullName" {...register('fullName')} />
+                {errors.fullName && <p className="text-red-500 text-sm">{errors.fullName.message}</p>}
               </div>
               <div>
                 <Label htmlFor="gradeLevel">年级</Label>
-                <Select value={formData.gradeLevel} onValueChange={(v) => setFormData({ ...formData, gradeLevel: v as '初中1' | '初中2' | '初中3' })}>
+                <Select onValueChange={(value) => setValue('gradeLevel', value)} defaultValue={editingUser?.gradeLevel}>
                   <SelectTrigger>
                     <SelectValue placeholder="选择年级" />
                   </SelectTrigger>
@@ -145,10 +140,11 @@ const UserManagement: React.FC = () => {
                     ))}
                   </SelectContent>
                 </Select>
+                {errors.gradeLevel && <p className="text-red-500 text-sm">{errors.gradeLevel.message}</p>}
               </div>
               <div>
                 <Label htmlFor="role">角色</Label>
-                <Select value={formData.role} onValueChange={(v) => setFormData({ ...formData, role: v as 'student' | 'admin' })}>
+                <Select onValueChange={(value) => setValue('role', value)} defaultValue={editingUser?.role}>
                   <SelectTrigger>
                     <SelectValue placeholder="选择角色" />
                   </SelectTrigger>
@@ -158,6 +154,7 @@ const UserManagement: React.FC = () => {
                     ))}
                   </SelectContent>
                 </Select>
+                {errors.role && <p className="text-red-500 text-sm">{errors.role.message}</p>}
               </div>
               <Button type="submit" className="w-full">保存</Button>
             </form>
@@ -170,6 +167,15 @@ const UserManagement: React.FC = () => {
           <CardTitle>用户列表</CardTitle>
         </CardHeader>
         <CardContent>
+          <Input
+            placeholder="搜索用户..."
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="mb-4 max-w-sm"
+          />
           <Table>
             <TableHeader>
               <TableRow>
@@ -182,25 +188,48 @@ const UserManagement: React.FC = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users?.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>{user.fullName}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>{user.role}</TableCell>
-                  <TableCell>{user.gradeLevel}</TableCell>
-                  <TableCell>{new Date(user.createdAt).toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="sm" onClick={() => setEditingUser(user)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(user.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center">
+                    加载中...
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : users.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center">
+                    暂无用户
+                  </TableCell>
+                </TableRow>
+              ) : (
+                users.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell>{user.fullName}</TableCell>
+                    <TableCell>{user.email}</TableCell>
+                    <TableCell>{user.role}</TableCell>
+                    <TableCell>{user.gradeLevel}</TableCell>
+                    <TableCell>{new Date(user.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="sm" onClick={() => setEditingUser(user)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(user.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
+          <div className="flex justify-between mt-4">
+            <Button disabled={currentPage === 1} onClick={() => setCurrentPage((prev) => prev - 1)}>
+              上一页
+            </Button>
+            <span>第 {currentPage} 页 / 共 {totalPages} 页</span>
+            <Button disabled={currentPage === totalPages} onClick={() => setCurrentPage((prev) => prev + 1)}>
+              下一页
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

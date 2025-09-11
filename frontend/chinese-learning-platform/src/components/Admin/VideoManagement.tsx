@@ -1,24 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { VideoService } from '@/services/video.service';
 import { SubjectService } from '@/services/subject.service';
-import { ChapterService, Chapter } from '@/services/chapter.service';
+import { ChapterService } from '@/services/chapter.service';
 import { Video } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { toast } from 'react-hot-toast';
-import { Pencil, Trash2, Plus } from 'lucide-react';
-import { Download } from 'lucide-react';
+import { Pencil, Trash2, Plus, Download, Upload } from 'lucide-react';
 import Papa from 'papaparse';
-import { Upload } from 'lucide-react';
-import { Search } from 'lucide-react';
 
 const gradeLevels = ['初中1', '初中2', '初中3'] as const;
+const difficultyLevels = [
+  { value: 'easy', label: '简单' },
+  { value: 'medium', label: '中等' },
+  { value: 'hard', label: '困难' }
+];
 
 type FormData = {
   id?: number;
@@ -34,69 +39,89 @@ type FormData = {
   sortOrder: number;
 };
 
+const formSchema = z.object({
+  title: z.string().min(1, { message: '标题是必需的' }),
+  titleChinese: z.string().optional(),
+  description: z.string().optional(),
+  youtubeUrl: z.string().url({ message: '无效的URL' }).min(1, { message: 'YouTube URL是必需的' }),
+  subjectId: z.number().min(1, { message: '科目是必需的' }),
+  gradeLevel: z.enum(['初中1', '初中2', '初中3']),
+  chapter: z.string().optional(),
+  topic: z.string().optional(),
+  difficultyLevel: z.enum(['easy', 'medium', 'hard']),
+  sortOrder: z.number().optional(),
+});
+
 const VideoManagement: React.FC = () => {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingVideo, setEditingVideo] = useState<Video | null>(null);
-  const [formData, setFormData] = useState<FormData>({
-    title: '',
-    titleChinese: '',
-    description: '',
-    youtubeUrl: '',
-    subjectId: 0,
-    gradeLevel: '初中1',
-    chapter: '',
-    topic: '',
-    difficultyLevel: 'medium',
-    sortOrder: 0,
-  });
-  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [chapters, setChapters] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState<number | null>(null);
+  const [selectedGrade, setSelectedGrade] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const limit = 20;
 
-  const { data: videos } = useQuery({
-    queryKey: ['videos'],
-    queryFn: () => VideoService.getAllVideos({ limit: 100 }),
-    select: (data) => data.videos,
+  const { register, handleSubmit, formState: { errors }, setValue, reset, watch } = useForm<FormData>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      title: '',
+      titleChinese: '',
+      description: '',
+      youtubeUrl: '',
+      subjectId: 0,
+      gradeLevel: '初中1',
+      chapter: '',
+      topic: '',
+      difficultyLevel: 'medium',
+      sortOrder: 0,
+    }
   });
+
+  const subjectId = watch('subjectId');
+  const gradeLevel = watch('gradeLevel');
+
+  const { data: videosData } = useQuery({
+    queryKey: ['videos', searchTerm, selectedSubject, selectedGrade, currentPage],
+    queryFn: () => VideoService.getAllVideos({ search: searchTerm, subject_id: selectedSubject, grade_level: selectedGrade, page: currentPage, limit }),
+  });
+  const videos = videosData?.videos || [];
+  const pagination = videosData?.pagination;
 
   const { data: subjects } = useQuery({
     queryKey: ['subjects'],
     queryFn: SubjectService.getSubjects,
   });
 
-  // Move filteredVideos here after videos is defined
-  const filteredVideos = videos?.filter(v => 
-    v.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    v.description.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   useEffect(() => {
-    if (formData.subjectId && formData.gradeLevel) {
+    if (subjectId && gradeLevel) {
       ChapterService.getChapters({
-        subject_id: formData.subjectId,
-        grade_level: formData.gradeLevel,
+        subject_id: subjectId,
+        grade_level: gradeLevel,
       }).then(setChapters);
     }
-  }, [formData.subjectId, formData.gradeLevel]);
+  }, [subjectId, gradeLevel]);
 
   useEffect(() => {
     if (editingVideo) {
-      setFormData({
-        id: editingVideo.id,
-        title: editingVideo.title,
-        titleChinese: editingVideo.title_chinese || '',
-        description: editingVideo.description || '',
-        youtubeUrl: editingVideo.youtube_url,
-        subjectId: editingVideo.subject_id,
-        gradeLevel: editingVideo.grade_level,
-        chapter: editingVideo.chapter || '',
-        topic: editingVideo.topic || '',
-        difficultyLevel: editingVideo.difficulty_level,
-        sortOrder: editingVideo.sort_order,
-      });
+      setValue('title', editingVideo.title);
+      setValue('titleChinese', editingVideo.title_chinese || '');
+      setValue('description', editingVideo.description || '');
+      setValue('youtubeUrl', editingVideo.youtube_url);
+      setValue('subjectId', editingVideo.subject_id);
+      setValue('gradeLevel', editingVideo.grade_level);
+      setValue('chapter', editingVideo.chapter || '');
+      setValue('topic', editingVideo.topic || '');
+      setValue('difficultyLevel', editingVideo.difficulty_level);
+      setValue('sortOrder', editingVideo.sort_order);
       setIsDialogOpen(true);
     }
-  }, [editingVideo]);
+  }, [editingVideo, setValue]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedSubject, selectedGrade]);
 
   const createMutation = useMutation({
     mutationFn: (data: FormData) => VideoService.createVideo(data),
@@ -130,7 +155,7 @@ const VideoManagement: React.FC = () => {
   });
 
   const resetForm = () => {
-    setFormData({
+    reset({
       title: '',
       titleChinese: '',
       description: '',
@@ -143,22 +168,20 @@ const VideoManagement: React.FC = () => {
       sortOrder: 0,
     });
     setEditingVideo(null);
-    setChapters([]);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = (data: FormData) => {
     if (editingVideo) {
-      updateMutation.mutate(formData);
+      updateMutation.mutate({ id: editingVideo.id, ...data });
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate(data);
     }
   };
 
   const exportToCSV = () => {
     const csvContent = 'data:text/csv;charset=utf-8,' + 
       'ID,Title,Description,Video URL,Thumbnail URL,Subject,Grade,Chapter,Difficulty,Sort Order\n' + 
-      videos.map(v => `${v.id},${v.title},${v.description},${v.video_url},${v.thumbnail_url},${v.subject_name_chinese},${v.grade_level},${v.chapter_name},${v.difficulty},${v.sort_order}`).join('\n');
+      videos.map(v => `${v.id},${v.title},${v.description || ''},${v.youtube_url},${v.thumbnail_url || ''},${v.subject_name_chinese},${v.grade_level},${v.chapter || ''},${v.difficulty_level},${v.sort_order}`).join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
@@ -168,9 +191,8 @@ const VideoManagement: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  const handleCSVImport = async (event) => {
-    console.log('handleCSVImport triggered');
-    const file = event.target.files[0];
+  const handleCSVImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (file) {
       Papa.parse(file, {
         header: true,
@@ -179,8 +201,9 @@ const VideoManagement: React.FC = () => {
             const { videos: existingVideos } = await VideoService.getAllVideos({ limit: 1000 });
             let importedCount = 0;
             let skippedCount = 0;
-            for (const row of results.data) {
-              const subject = subjects.find(s => s.name_chinese === row.Subject);
+            
+            for (const row of results.data as any[]) {
+              const subject = subjects?.find(s => s.name_chinese === row.Subject);
               if (!subject) continue;
   
               const fetchedChapters = await ChapterService.getChapters({
@@ -188,7 +211,7 @@ const VideoManagement: React.FC = () => {
                 grade_level: row.Grade,
               });
   
-              const chapter = fetchedChapters.find(c => c.name === row.Chapter);
+              const chapter = fetchedChapters.find((c: any) => c.name === row.Chapter);
               if (!chapter) continue;
   
               const potentialVideo = {
@@ -203,7 +226,7 @@ const VideoManagement: React.FC = () => {
               };
   
               // Check for duplicate
-              const isDuplicate = existingVideos.some(v => 
+              const isDuplicate = existingVideos.some((v: Video) => 
                 v.subject_id === potentialVideo.subjectId &&
                 v.grade_level === potentialVideo.gradeLevel &&
                 v.chapter === potentialVideo.chapter &&
@@ -211,7 +234,6 @@ const VideoManagement: React.FC = () => {
               );
   
               if (isDuplicate) {
-                console.log(`Skipping duplicate video: ${potentialVideo.title}`);
                 skippedCount++;
                 continue;
               }
@@ -219,10 +241,11 @@ const VideoManagement: React.FC = () => {
               await VideoService.createVideo(potentialVideo);
               importedCount++;
             }
+            
             queryClient.invalidateQueries({ queryKey: ['videos'] });
-            toast.success(`Imported ${importedCount} videos, skipped ${skippedCount} duplicates`);
+            toast.success(`导入 ${importedCount} 个视频，跳过 ${skippedCount} 个重复项`);
           } catch (error) {
-            toast.error('Failed to import videos');
+            toast.error('导入视频失败');
             console.error(error);
           }
         }
@@ -231,169 +254,246 @@ const VideoManagement: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="container mx-auto p-4">
+      <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">视频管理</h1>
         <div className="space-x-2">
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={resetForm}>
-                <Plus className="mr-2 h-4 w-4" />
-                添加视频
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px] max-h-[80vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>{editingVideo ? '编辑视频' : '添加视频'}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <Label htmlFor="title">标题</Label>
-                  <Input id="title" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} required />
-                </div>
-                <div>
-                  <Label htmlFor="titleChinese">中文标题</Label>
-                  <Input id="titleChinese" value={formData.titleChinese} onChange={(e) => setFormData({ ...formData, titleChinese: e.target.value })} />
-                </div>
-                <div>
-                  <Label htmlFor="description">描述</Label>
-                  <Input id="description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
-                </div>
-                <div>
-                  <Label htmlFor="youtubeUrl">YouTube URL</Label>
-                  <Input id="youtubeUrl" value={formData.youtubeUrl} onChange={(e) => setFormData({ ...formData, youtubeUrl: e.target.value })} required />
-                </div>
-                <div>
-                  <Label htmlFor="subjectId">科目</Label>
-                  <Select value={formData.subjectId.toString()} onValueChange={(v) => setFormData({ ...formData, subjectId: parseInt(v) })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择科目" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {subjects?.map((subject) => (
-                        <SelectItem key={subject.id} value={subject.id.toString()}>
-                          {subject.name_chinese}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="gradeLevel">年级</Label>
-                  <Select value={formData.gradeLevel} onValueChange={(v) => setFormData({ ...formData, gradeLevel: v as '初中1' | '初中2' | '初中3' })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择年级" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {gradeLevels.map((level) => (
-                        <SelectItem key={level} value={level}>{level}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="chapter">章节</Label>
-                  <Select value={formData.chapter} onValueChange={(v) => setFormData({ ...formData, chapter: v })} disabled={!chapters.length}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择章节" />
-                    </SelectTrigger>
-                    <SelectContent className="z-[50]">
-                      {chapters.map((ch) => (
-                        <SelectItem key={ch.id} value={ch.name}>{ch.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="topic">主题</Label>
-                  <Input id="topic" value={formData.topic} onChange={(e) => setFormData({ ...formData, topic: e.target.value })} />
-                </div>
-                <div>
-                  <Label htmlFor="difficultyLevel">难度</Label>
-                  <Select value={formData.difficultyLevel} onValueChange={(v) => setFormData({ ...formData, difficultyLevel: v as 'easy' | 'medium' | 'hard' })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择难度" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="easy">简单</SelectItem>
-                      <SelectItem value="medium">中等</SelectItem>
-                      <SelectItem value="hard">困难</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="sortOrder">排序</Label>
-                  <Input id="sortOrder" type="number" value={formData.sortOrder} onChange={(e) => setFormData({ ...formData, sortOrder: parseInt(e.target.value) })} />
-                </div>
-                <Button type="submit" className="w-full">保存</Button>
-              </form>
-            </DialogContent>
-          </Dialog>
-        <Button variant="outline" onClick={exportToCSV}><Download className="mr-2 h-4 w-4" /> Export CSV</Button>
-        <div className="inline-block">
-          <input 
-            id="video-csv-import" 
-            type="file" 
-            accept=".csv" 
-            onChange={handleCSVImport} 
-            style={{ display: 'none' }}
-          />
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              console.log('Direct button click');
-              document.getElementById('video-csv-import')?.click();
-            }}
-          >
-            <Upload className="mr-2 h-4 w-4" /> Import CSV
+          <Button onClick={() => {
+            resetForm();
+            setIsDialogOpen(true);
+          }}>
+            <Plus className="mr-2 h-4 w-4" />
+            添加视频
           </Button>
+          <Button variant="outline" onClick={exportToCSV}>
+            <Download className="mr-2 h-4 w-4" />
+            导出CSV
+          </Button>
+          <div className="inline-block">
+            <input 
+              id="video-csv-import" 
+              type="file" 
+              accept=".csv" 
+              onChange={handleCSVImport} 
+              style={{ display: 'none' }}
+            />
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                document.getElementById('video-csv-import')?.click();
+              }}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              导入CSV
+            </Button>
+          </div>
         </div>
       </div>
-    </div>
-    <Card>
-      <CardHeader>
-        <CardTitle>视频列表</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="mb-4">
-          <Input 
-            placeholder="Search by title or description" 
-            value={searchTerm} 
-            onChange={(e) => setSearchTerm(e.target.value)} 
-            className="max-w-sm" 
-          />
-        </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>标题</TableHead>
-              <TableHead>科目</TableHead>
-              <TableHead>年级</TableHead>
-              <TableHead>章节</TableHead>
-              <TableHead>操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredVideos?.map((video) => (
-              <TableRow key={video.id}>
-                <TableCell>{video.title_chinese || video.title}</TableCell>
-                <TableCell>{video.subject_name_chinese}</TableCell>
-                <TableCell>{video.grade_level}</TableCell>
-                <TableCell>{video.chapter}</TableCell>
-                <TableCell>
-                  <Button variant="ghost" size="sm" onClick={() => setEditingVideo(video)}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(video.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </TableCell>
-              </TableRow>
+
+      <div className="flex space-x-4 mb-4">
+        <Input 
+          placeholder="搜索视频标题或描述" 
+          value={searchTerm} 
+          onChange={(e) => setSearchTerm(e.target.value)} 
+          className="max-w-sm" 
+        />
+        <Select value={selectedSubject ? selectedSubject.toString() : ''} onValueChange={(v) => setSelectedSubject(v ? parseInt(v) : null)}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="选择科目" />
+          </SelectTrigger>
+          <SelectContent>
+            {subjects?.map((subject) => (
+              <SelectItem key={subject.id} value={subject.id.toString()}>
+                {subject.name_chinese}
+              </SelectItem>
             ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+          </SelectContent>
+        </Select>
+        <Select value={selectedGrade || ''} onValueChange={(v) => setSelectedGrade(v || null)}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="选择年级" />
+          </SelectTrigger>
+          <SelectContent>
+            {gradeLevels.map((level) => (
+              <SelectItem key={level} value={level}>{level}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>标题</TableHead>
+            <TableHead>科目</TableHead>
+            <TableHead>年级</TableHead>
+            <TableHead>章节</TableHead>
+            <TableHead>操作</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {videos.map((video) => (
+            <TableRow key={video.id}>
+              <TableCell>{video.title_chinese || video.title}</TableCell>
+              <TableCell>{video.subject_name_chinese}</TableCell>
+              <TableCell>{video.grade_level}</TableCell>
+              <TableCell>{video.chapter}</TableCell>
+              <TableCell>
+                <Button variant="ghost" size="sm" onClick={() => setEditingVideo(video)}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(video.id)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      {pagination && (
+        <div className="flex justify-center space-x-2 mt-4">
+          <Button
+            variant="outline"
+            disabled={currentPage <= 1}
+            onClick={() => setCurrentPage(prev => prev - 1)}
+          >
+            上一页
+          </Button>
+          <span className="py-2 px-4">
+            第 {currentPage} 页 / 共 {pagination.pages} 页
+          </span>
+          <Button
+            variant="outline"
+            disabled={currentPage >= pagination.pages}
+            onClick={() => setCurrentPage(prev => prev + 1)}
+          >
+            下一页
+          </Button>
+        </div>
+      )}
+
+      <Dialog open={isDialogOpen} onOpenChange={(open) => {
+        setIsDialogOpen(open);
+        if (!open) resetForm();
+      }}>
+        <DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingVideo ? '编辑视频' : '添加视频'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div>
+              <Label htmlFor="title">标题</Label>
+              <Input id="title" {...register('title')} />
+              {errors.title && <p className="text-red-500 text-sm">{errors.title.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="titleChinese">中文标题</Label>
+              <Input id="titleChinese" {...register('titleChinese')} />
+              {errors.titleChinese && <p className="text-red-500 text-sm">{errors.titleChinese.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="description">描述</Label>
+              <Input id="description" {...register('description')} />
+              {errors.description && <p className="text-red-500 text-sm">{errors.description.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="youtubeUrl">YouTube URL</Label>
+              <Input id="youtubeUrl" {...register('youtubeUrl')} />
+              {errors.youtubeUrl && <p className="text-red-500 text-sm">{errors.youtubeUrl.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="subjectId">科目</Label>
+              <Select 
+                value={subjectId ? subjectId.toString() : ''} 
+                onValueChange={(v) => setValue('subjectId', parseInt(v))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择科目" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjects?.map((subject) => (
+                    <SelectItem key={subject.id} value={subject.id.toString()}>
+                      {subject.name_chinese}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.subjectId && <p className="text-red-500 text-sm">{errors.subjectId.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="gradeLevel">年级</Label>
+              <Select 
+                value={gradeLevel} 
+                onValueChange={(v) => setValue('gradeLevel', v as '初中1' | '初中2' | '初中3')}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择年级" />
+                </SelectTrigger>
+                <SelectContent>
+                  {gradeLevels.map((level) => (
+                    <SelectItem key={level} value={level}>{level}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.gradeLevel && <p className="text-red-500 text-sm">{errors.gradeLevel.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="chapter">章节</Label>
+              <Select 
+                value={watch('chapter')} 
+                onValueChange={(v) => setValue('chapter', v)}
+                disabled={!chapters.length}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择章节" />
+                </SelectTrigger>
+                <SelectContent>
+                  {chapters.map((chapter) => (
+                    <SelectItem key={chapter.id} value={chapter.name}>
+                      {chapter.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.chapter && <p className="text-red-500 text-sm">{errors.chapter.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="topic">主题</Label>
+              <Input id="topic" {...register('topic')} />
+              {errors.topic && <p className="text-red-500 text-sm">{errors.topic.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="difficultyLevel">难度</Label>
+              <Select 
+                value={watch('difficultyLevel')} 
+                onValueChange={(v) => setValue('difficultyLevel', v as 'easy' | 'medium' | 'hard')}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择难度" />
+                </SelectTrigger>
+                <SelectContent>
+                  {difficultyLevels.map((level) => (
+                    <SelectItem key={level.value} value={level.value}>
+                      {level.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.difficultyLevel && <p className="text-red-500 text-sm">{errors.difficultyLevel.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="sortOrder">排序</Label>
+              <Input 
+                id="sortOrder" 
+                type="number" 
+                {...register('sortOrder', { valueAsNumber: true })} 
+              />
+              {errors.sortOrder && <p className="text-red-500 text-sm">{errors.sortOrder.message}</p>}
+            </div>
+            <Button type="submit" className="w-full">保存</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

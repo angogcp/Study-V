@@ -27,6 +27,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { VideoProgress, UserNote } from '@/types';
+import { motion } from 'framer-motion';
 
 interface YouTubePlayer {
   getCurrentTime(): number;
@@ -308,7 +309,12 @@ const handleDeleteNote = (id: number) => {
   };
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
       {/* Header */}
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={() => navigate('/videos')}>
@@ -581,7 +587,7 @@ const handleDeleteNote = (id: number) => {
           </Card>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
