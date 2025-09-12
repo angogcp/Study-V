@@ -195,9 +195,14 @@ const Dashboard: React.FC = () => {
           <CardContent className="space-y-4">
             {stats?.recentActivity?.map((activity, index) => (
               <div key={index} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50">
-                <img 
-                  src={activity.thumbnail_url || '/placeholder-video.jpg'} 
+                <img
+                  src={activity.thumbnail_url}
                   alt={activity.title_chinese || activity.title}
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.onerror = () => { target.src = '/placeholder-video.jpg'; };
+                    target.src = activity.thumbnail_url.replace('maxresdefault.jpg', 'hqdefault.jpg');
+                  }}
                   className="w-12 h-8 object-cover rounded"
                 />
                 <div className="flex-1 min-w-0">

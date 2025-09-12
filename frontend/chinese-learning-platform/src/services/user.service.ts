@@ -2,9 +2,9 @@ import api from '@/lib/api';
 import { User } from '@/types';
 
 export class UserService {
-  static async getAllUsers(): Promise<User[]> {
-    const response = await api.get<{ users: User[] }>('/users');
-    return response.data.users;
+  static async getAllUsers(params?: { search?: string; page?: number; limit?: number }): Promise<{ users: User[]; totalPages: number }> {
+    const response = await api.get<{ users: User[]; totalPages: number }>('/users', { params });
+    return response.data;
   }
 
   static async getUserById(id: string): Promise<User> {

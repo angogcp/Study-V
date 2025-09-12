@@ -40,6 +40,7 @@ router.get('/', (req, res) => {
 // Create new chapter (admin only)
 router.post('/', authenticateToken, requireAdmin, (req, res) => {
   const { subject_id, grade_level, name, sort_order } = req.body;
+  console.log('Received chapter data:', { subject_id, grade_level, name, sort_order });
 
   if (!subject_id || !grade_level || !name) {
     return res.status(400).json({ error: 'Subject ID, grade level, and name are required' });
@@ -52,6 +53,7 @@ router.post('/', authenticateToken, requireAdmin, (req, res) => {
     [subject_id, grade_level, name, sort_order || 0],
     function(err) {
       if (err) {
+        console.error('Database error creating chapter:', err);
         return res.status(500).json({ error: 'Failed to create chapter' });
       }
 

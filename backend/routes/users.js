@@ -10,17 +10,41 @@ const router = express.Router();
 // Get all users (admin only)
 router.get('/', authenticateToken, requireAdmin, (req, res) => {
   const db = getDatabase();
-  db.all(
-    `SELECT user_uuid as id, email, full_name, role, grade_level, created_at FROM user_profiles`,
-    [],
-    (err, users) => {
+  const { search, page = 1, limit = 10 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  let query = `SELECT user_uuid as id, email, full_name, role, grade_level, created_at FROM user_profiles`;
+  let countQuery = `SELECT COUNT(*) as count FROM user_profiles`;
+  const params = [];
+  const countParams = [];
+
+  if (search) {
+    query += ` WHERE email LIKE ? OR full_name LIKE ?`;
+    countQuery += ` WHERE email LIKE ? OR full_name LIKE ?`;
+    params.push(`%${search}%`, `%${search}%`);
+    countParams.push(`%${search}%`, `%${search}%`);
+  }
+
+  query += ` LIMIT ? OFFSET ?`;
+  params.push(parseInt(limit), offset);
+
+  db.get(countQuery, countParams, (err, countRow) => {
+    if (err) {
+      db.close();
+      return res.status(500).json({ error: 'Database error' });
+    }
+    const totalUsers = countRow.count;
+    const totalPages = Math.ceil(totalUsers / parseInt(limit));
+
+    db.all(query, params, (err, users) => {
       if (err) {
+        db.close();
         return res.status(500).json({ error: 'Database error' });
       }
-      res.json({ users });
-    }
-  );
-  db.close();
+      res.json({ users, totalPages });
+      db.close();
+    });
+  });
 });
 
 // Get single user (admin only)

@@ -34,13 +34,23 @@ const UserManagement: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const { data: usersData, isLoading } = useQuery({
+  const { data: usersData, isLoading, isError, error } = useQuery({
     queryKey: ['users', searchTerm, currentPage],
-    queryFn: () => UserService.getAllUsers({ search: searchTerm, page: currentPage, limit: itemsPerPage }),
+    queryFn: () => UserService.getAllUsers({ search: searchTerm, page: currentPage, limit: 10 }),
+    keepPreviousData: true,
   });
 
-  const users = usersData?.users || [];
   const totalPages = usersData?.totalPages || 1;
+
+  const handlePreviousPage = () => {
+    setCurrentPage((prevPage) => Math.max(prevPage - 1, 1));
+  };
+
+  const handleNextPage = () => {
+    setCurrentPage((prevPage) => Math.min(prevPage + 1, totalPages));
+  };
+  const users = usersData?.users || [];
+  // const totalPages = usersData?.totalPages || 1; // This line is redundant and should be removed
 
   const createMutation = useMutation({
     mutationFn: UserService.createUser,
@@ -50,7 +60,10 @@ const UserManagement: React.FC = () => {
       reset();
       toast.success('用户添加成功');
     },
-    onError: () => toast.error('添加用户失败'),
+    onError: (error: any) => {
+      const errorMessage = error.response?.data?.error || '添加用户失败';
+      toast.error(errorMessage);
+    },
   });
 
   const updateMutation = useMutation({
@@ -90,6 +103,10 @@ const UserManagement: React.FC = () => {
   }, [editingUser, setValue, reset]);
 
   const onSubmit = (data: any) => {
+    if (!editingUser && (!data.password || data.password.trim() === '')) {
+      toast.error('对于新用户，密码是必需的');
+      return;
+    }
     if (editingUser) {
       updateMutation.mutate({ id: editingUser.id, ...data });
     } else {
@@ -221,14 +238,24 @@ const UserManagement: React.FC = () => {
               )}
             </TableBody>
           </Table>
-          <div className="flex justify-between mt-4">
-            <Button disabled={currentPage === 1} onClick={() => setCurrentPage((prev) => prev - 1)}>
+          <div className="flex justify-between items-center mt-4">
+            <button
+              onClick={handlePreviousPage}
+              disabled={currentPage === 1}
+              className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md disabled:opacity-50"
+            >
               上一页
-            </Button>
-            <span>第 {currentPage} 页 / 共 {totalPages} 页</span>
-            <Button disabled={currentPage === totalPages} onClick={() => setCurrentPage((prev) => prev + 1)}>
+            </button>
+            <span>
+              第 {currentPage}页/共 {totalPages}页
+            </span>
+            <button
+              onClick={handleNextPage}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md disabled:opacity-50"
+            >
               下一页
-            </Button>
+            </button>
           </div>
         </CardContent>
       </Card>

@@ -1,1 +1,329 @@
-import React, { useState, useEffect } from 'react';\nimport { useQuery } from '@tanstack/react-query';\nimport { VideoService } from '@/services/video.service';\nimport { SubjectService } from '@/services/subject.service';\nimport { useAuth } from '@/contexts/AuthContext';\nimport { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';\nimport { Input } from '@/components/ui/input';\nimport { Button } from '@/components/ui/button';\nimport { Badge } from '@/components/ui/badge';\nimport { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';\nimport { Link } from 'react-router-dom';\nimport { Search, Filter, Clock, Eye } from 'lucide-react';\nimport { Video } from '@/types';\nimport { ChapterService, Chapter } from '@/services/chapter.service';\nimport { motion } from 'framer-motion';\n\nconst VideoList: React.FC = () => {\n  const { user } = useAuth();\n  const [searchTerm, setSearchTerm] = useState('');\n  const [selectedSubject, setSelectedSubject] = useState('all');\n  const [selectedGrade, setSelectedGrade] = useState(user?.gradeLevel || 'all');\n  const [selectedChapter, setSelectedChapter] = useState('all');\n  const [currentPage, setCurrentPage] = useState(1);\n  const limit = 20;\n\n  useEffect(() => {\n    console.log('Selected Subject:', selectedSubject);\n    console.log('Selected Grade:', selectedGrade);\n    console.log('Selected Chapter:', selectedChapter);\n  }, [selectedSubject, selectedGrade, selectedChapter]);\n\n  const { data: subjects, isLoading: isLoadingSubjects } = useQuery({\n    queryKey: ['subjects'],\n    queryFn: SubjectService.getAllSubjects,\n  });\n\n  const { data: chapters, isLoading: isLoadingChapters } = useQuery({\n    queryKey: ['chapters', selectedSubject, selectedGrade],\n    queryFn: () => ChapterService.getChapters({\n      subject_id: selectedSubject !== 'all' ? parseInt(selectedSubject) : undefined,\n      grade_level: selectedGrade !== 'all' ? selectedGrade : undefined,\n    }),\n    enabled: true,\n    staleTime: 0,\n    refetchOnMount: true,\n    refetchOnWindowFocus: true,\n  });\n\n  useEffect(() => {\n    console.log('Subjects:', subjects);\n    console.log('Chapters:', chapters);\n  }, [subjects, chapters]);\n\n  const { data: videosData, isLoading } = useQuery({\n    queryKey: ['videos', searchTerm, selectedSubject, selectedGrade, selectedChapter, currentPage],\n    queryFn: () => {\n      console.log('Fetching videos with params:', {\n        search: searchTerm || undefined,\n        subject_id: selectedSubject && selectedSubject !== 'all' ? parseInt(selectedSubject) : undefined,\n        grade_level: selectedGrade && selectedGrade !== 'all' ? selectedGrade : undefined,\n        chapter: selectedChapter && selectedChapter !== 'all' ? selectedChapter : undefined,\n        page: currentPage,\n        limit,\n      });\n      return VideoService.getAllVideos({\n        search: searchTerm || undefined,\n        subject_id: selectedSubject && selectedSubject !== 'all' ? parseInt(selectedSubject) : undefined,\n        grade_level: selectedGrade && selectedGrade !== 'all' ? selectedGrade : undefined,\n        chapter: selectedChapter && selectedChapter !== 'all' ? selectedChapter : undefined,\n        page: currentPage,\n        limit,\n      });\n    },\n  });\n\n  const videos = videosData?.videos || [];\n  const pagination = videosData?.pagination;\n\n  const subjectItems = subjects && subjects.length > 0 \n    ? subjects.map((subject) => (\n        <SelectItem key={subject.id} value={subject.id.toString()}>\n          {subject.name_chinese}\n        </SelectItem>\n      )) \n    : [<SelectItem value="no-subjects" disabled key="no-subjects">\n        无可用学科\n      </SelectItem>];\n\n  const chapterItems = chapters && chapters.length > 0 \n    ? chapters.map((chapter) => (\n        <SelectItem key={chapter.id} value={chapter.name}>\n          {chapter.name}\n        </SelectItem>\n      )) \n    : [<SelectItem value="no-chapters" disabled key="no-chapters">\n        无可用章节\n      </SelectItem>];\n\n  const handleSearch = (e) => {\n    e.preventDefault();\n    setCurrentPage(1);\n  };\n\n  const resetFilters = () => {\n    setSearchTerm('');\n    setSelectedSubject('all');\n    setSelectedGrade(user?.gradeLevel || 'all');\n    setSelectedChapter('all');\n    setCurrentPage(1);\n  };\n\n  const formatDuration = (seconds) => {\n    const minutes = Math.floor(seconds / 60);\n    const remainingSeconds = seconds % 60;\n    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;\n  };\n\n  const getDifficultyColor = (level) => {\n    switch (level) {\n      case 'easy': return 'bg-green-100 text-green-800';\n      case 'medium': return 'bg-yellow-100 text-yellow-800';\n      case 'hard': return 'bg-red-100 text-red-800';\n      default: return 'bg-gray-100 text-gray-800';\n    }\n  };\n\n  const getDifficultyText = (level) => {\n    switch (level) {\n      case 'easy': return '简单';\n      case 'medium': return '中等';\n      case 'hard': return '困难';\n      default: return '中等';\n    }\n  };\n\n  let videoContent;\n  if (isLoading) {\n    videoContent = (\n      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">\n        {[...Array(8)].map((_, i) => (\n          <Card key={i} className="animate-pulse">\n            <div className="aspect-video bg-gray-300 rounded-t-lg" />\n            <CardContent className="p-4">\n              <div className="h-4 bg-gray-300 rounded mb-2" />\n              <div className="h-3 bg-gray-300 rounded w-3/4 mb-2" />\n              <div className="flex space-x-2">\n                <div className="h-5 bg-gray-300 rounded w-16" />\n                <div className="h-5 bg-gray-300 rounded w-12" />\n              </div>\n            </CardContent>\n          </Card>\n        ))}\n      </div>\n    );\n  } else if (videos.length > 0) {\n    videoContent = (\n      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">\n        {videos.map((video, index) => (\n          <motion.div\n            key={video.id}\n            initial={{ opacity: 0, y: 20 }}\n            animate={{ opacity: 1, y: 0 }}\n            transition={{ duration: 0.3, delay: index * 0.05 }}\n          >\n            <Card className="group hover:shadow-lg transition-shadow duration-200">\n              <Link to={`/videos/${video.id}`}>\n                <div className="relative">\n                  <img\n                    src={video.thumbnail_url || '/placeholder-video.jpg'}\n                    alt={video.title_chinese || video.title}\n                    className="w-full aspect-video object-cover rounded-t-lg group-hover:scale-105 transition-transform duration-200"\n                  />\n                  {video.duration > 0 && (\n                    <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-1 rounded">\n                      {formatDuration(video.duration)}\n                    </div>\n                  )}\n                  <div className="absolute top-2 left-2">\n                    <Badge className={getDifficultyColor(video.difficulty_level)}>\n                      {getDifficultyText(video.difficulty_level)}\n                    </Badge>\n                  </div>\n                </div>\n              </Link>\n              <CardContent className="p-4">\n                <Link to={`/videos/${video.id}`}>\n                  <h3 className="font-semibold text-lg mb-2 line-clamp-2 group-hover:text-blue-600 transition-colors">\n                    {video.title_chinese || video.title}\n                  </h3>\n                </Link>\n                <div className="space-y-2">\n                  <div className="flex items-center justify-between text-sm text-gray-600">\n                    <span className="px-2 py-1 rounded text-xs font-medium text-white" style={{ backgroundColor: video.subject_color }}>\n                      {video.subject_name_chinese}\n                    </span>\n                    <Badge variant="outline">\n                      {video.grade_level}\n                    </Badge>\n                  </div>\n                  {video.chapter && (\n                    <p className="text-sm text-gray-600 line-clamp-1">\n                      {video.chapter}\n                      {video.topic && ` - ${video.topic}`}\n                    </p>\n                  )}\n                  <div className="flex items-center justify-between text-xs text-gray-500">\n                    <div className="flex items-center space-x-2">\n                      <Eye className="h-3 w-3" />\n                      <span>{video.view_count}</span>\n                    </div>\n                    <div className="flex items-center space-x-1">\n                      <Clock className="h-3 w-3" />\n                      <span>\n                        {formatDuration(video.duration)}\n                      </span>\n                    </div>\n                  </div>\n                </div>\n              </CardContent>\n            </Card>\n          </motion.div>\n        ))}\n      </div>\n    );\n  } else {\n    videoContent = (\n      <Card>\n        <CardContent className="text-center py-12">\n          <p className="text-gray-500 text-lg">暂无符合条件的视频</p>\n          <p className="text-gray-400 text-sm mt-2">请调整搜索条件或筛选器</p>\n        </CardContent>\n      </Card>\n    );\n  }\n\n  return (\n    <div className="space-y-6">\n      <div>\n        <h1 className="text-3xl font-bold text-gray-900">视频学习</h1>\n        <p className="text-gray-600 mt-2">浏览和学习各科视频课程</p>\n      </div>\n      <Card>\n        <CardHeader>\n          <CardTitle className="flex items-center">\n            <Filter className="mr-2 h-5 w-5" />\n            筛选和搜索\n          </CardTitle>\n        </CardHeader>\n        <CardContent>\n          <form onSubmit={handleSearch} className="space-y-4">\n            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">\n              <div className="relative">\n                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />\n                <Input placeholder="搜索视频标题或描述..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />\n              </div>\n              <Select value={selectedSubject} onValueChange={(value) => { console.log('Subject selected:', value); setSelectedSubject(value); setSelectedChapter('all'); setCurrentPage(1); }} disabled={isLoadingSubjects}>\n                <SelectTrigger>\n                  <SelectValue placeholder="选择学科" />\n                </SelectTrigger>\n                <SelectContent>\n                  <SelectItem value="all">所有学科</SelectItem>\n                  {subjectItems}\n                </SelectContent>\n              </Select>\n              <Select value={selectedGrade} onValueChange={(value) => { console.log('Grade selected:', value); setSelectedGrade(value); setSelectedChapter('all'); setCurrentPage(1); }}>\n                <SelectTrigger className="w-[120px]">\n                  <SelectValue placeholder="年级" />\n                </SelectTrigger>\n                <SelectContent>\n                  <SelectItem value="all">所有年级</SelectItem>\n                  <SelectItem value="初中1">初中1</SelectItem>\n                  <SelectItem value="初中2">初中2</SelectItem>\n                  <SelectItem value="初中3">初中3</SelectItem>\n                </SelectContent>\n              </Select>\n              <Select value={selectedChapter} onValueChange={(value) => { console.log('Chapter selected:', value); setSelectedChapter(value); setCurrentPage(1); }} disabled={isLoadingChapters || !chapters || chapters.length === 0}>\n                <SelectTrigger className="w-[180px]">\n                  <SelectValue placeholder="章节" />\n                </SelectTrigger>\n                <SelectContent>\n                  <SelectItem value="all">所有章节</SelectItem>\n                  {chapterItems}\n                </SelectContent>\n              </Select>\n              <div className="flex space-x-2">\n                <Button type="submit" className="flex-1">搜索</Button>\n                <Button type="button" variant="outline" onClick={resetFilters}>重置</Button>\n              </div>\n            </div>\n          </form>\n        </CardContent>\n      </Card>\n      {pagination && (\n        <div className="flex justify-between items-center text-sm text-gray-600">\n          <span>\n            显示 {((pagination.page - 1) * pagination.limit) + 1} - {Math.min(pagination.page * pagination.limit, pagination.total)} 共 {pagination.total} 个结果\n          </span>\n          <span>\n            第 {pagination.page} 页，共 {pagination.pages} 页\n          </span>\n        </div>\n      )}\n      {videoContent}\n      {pagination && pagination.pages > 1 && (\n        <div className="flex justify-center space-x-2">\n          <Button variant="outline" disabled={pagination.page <= 1} onClick={() => setCurrentPage(pagination.page - 1)}>\n            上一页\n          </Button>\n          <div className="flex items-center space-x-1">\n            {[...Array(Math.min(5, pagination.pages))].map((_, i) => {\n              const pageNum = Math.max(1, pagination.page - 2) + i;\n              if (pageNum > pagination.pages) return null;\n              return (\n                <Button key={pageNum} variant={pageNum === pagination.page ? 'default' : 'outline'} size="sm" onClick={() => setCurrentPage(pageNum)}>\n                  {pageNum}\n                </Button>\n              );\n            })}\n          </div>\n          <Button variant="outline" disabled={pagination.page >= pagination.pages} onClick={() => setCurrentPage(pagination.page + 1)}>\n            下一页\n          </Button>\n        </div>\n      )}\n    </div>\n  );\n};\n\nexport default VideoList;
+import React, { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { VideoService } from '@/services/video.service';
+import { SubjectService } from '@/services/subject.service';
+import { useAuth } from '@/contexts/AuthContext';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Link } from 'react-router-dom';
+import { Search, Filter, Clock, Eye } from 'lucide-react';
+import { Video } from '@/types';
+import { ChapterService, Chapter } from '@/services/chapter.service';
+import { motion } from 'framer-motion';
+
+const VideoList: React.FC = () => {
+  const { user } = useAuth();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('all');
+  const [selectedGrade, setSelectedGrade] = useState(user?.gradeLevel || 'all');
+  const [selectedChapter, setSelectedChapter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const limit = 20;
+
+  useEffect(() => {
+    console.log('Selected Subject:', selectedSubject);
+    console.log('Selected Grade:', selectedGrade);
+    console.log('Selected Chapter:', selectedChapter);
+  }, [selectedSubject, selectedGrade, selectedChapter]);
+
+  const { data: subjects, isLoading: isLoadingSubjects } = useQuery({
+    queryKey: ['subjects'],
+    queryFn: SubjectService.getAllSubjects,
+  });
+
+  const { data: chapters, isLoading: isLoadingChapters } = useQuery({
+    queryKey: ['chapters', selectedSubject, selectedGrade],
+    queryFn: () => ChapterService.getChapters({
+      subject_id: selectedSubject !== 'all' ? parseInt(selectedSubject) : undefined,
+      grade_level: selectedGrade !== 'all' ? selectedGrade : undefined,
+    }),
+    enabled: true,
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    console.log('Subjects:', subjects);
+    console.log('Chapters:', chapters);
+  }, [subjects, chapters]);
+
+  const { data: videosData, isLoading } = useQuery({
+    queryKey: ['videos', searchTerm, selectedSubject, selectedGrade, selectedChapter, currentPage],
+    queryFn: () => {
+      console.log('Fetching videos with params:', {
+        search: searchTerm || undefined,
+        subject_id: selectedSubject && selectedSubject !== 'all' ? parseInt(selectedSubject) : undefined,
+        grade_level: selectedGrade && selectedGrade !== 'all' ? selectedGrade : undefined,
+        chapter: selectedChapter && selectedChapter !== 'all' ? selectedChapter : undefined,
+        page: currentPage,
+        limit,
+      });
+      return VideoService.getAllVideos({
+        search: searchTerm || undefined,
+        subject_id: selectedSubject && selectedSubject !== 'all' ? parseInt(selectedSubject) : undefined,
+        grade_level: selectedGrade && selectedGrade !== 'all' ? selectedGrade : undefined,
+        chapter: selectedChapter && selectedChapter !== 'all' ? selectedChapter : undefined,
+        page: currentPage,
+        limit,
+      });
+    },
+  });
+
+  const videos = videosData?.videos || [];
+  const pagination = videosData?.pagination;
+
+  const subjectItems = subjects && subjects.length > 0 
+    ? subjects.map((subject) => (
+        <SelectItem key={subject.id} value={subject.id.toString()}>
+          {subject.name_chinese}
+        </SelectItem>
+      )) 
+    : [<SelectItem value="no-subjects" disabled key="no-subjects">
+        无可用学科
+      </SelectItem>];
+
+  const chapterItems = chapters && chapters.length > 0 
+    ? chapters.map((chapter) => (
+        <SelectItem key={chapter.id} value={chapter.name}>
+          {chapter.name}
+        </SelectItem>
+      )) 
+    : [<SelectItem value="no-chapters" disabled key="no-chapters">
+        无可用章节
+      </SelectItem>];
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    setCurrentPage(1);
+  };
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setSelectedSubject('all');
+    setSelectedGrade(user?.gradeLevel || 'all');
+    setSelectedChapter('all');
+    setCurrentPage(1);
+  };
+
+  const formatDuration = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  const getDifficultyColor = (level) => {
+    switch (level) {
+      case 'easy': return 'bg-green-100 text-green-800';
+      case 'medium': return 'bg-yellow-100 text-yellow-800';
+      case 'hard': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getDifficultyText = (level) => {
+    switch (level) {
+      case 'easy': return '简单';
+      case 'medium': return '中等';
+      case 'hard': return '困难';
+      default: return '中等';
+    }
+  };
+
+  let videoContent;
+  if (isLoading) {
+    videoContent = (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {[...Array(8)].map((_, i) => (
+          <Card key={i} className="animate-pulse">
+            <div className="aspect-video bg-gray-300 rounded-t-lg" />
+            <CardContent className="p-4">
+              <div className="h-4 bg-gray-300 rounded mb-2" />
+              <div className="h-3 bg-gray-300 rounded w-3/4 mb-2" />
+              <div className="flex space-x-2">
+                <div className="h-5 bg-gray-300 rounded w-16" />
+                <div className="h-5 bg-gray-300 rounded w-12" />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  } else if (videos.length > 0) {
+    videoContent = (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {videos.map((video, index) => (
+          <motion.div
+            key={video.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: index * 0.05 }}
+          >
+            <Card className="group hover:shadow-lg transition-shadow duration-200">
+              <Link to={`/videos/${video.id}`}>
+                <div className="relative">
+                  <img
+                    src={video.thumbnail_url}
+                    alt={video.title_chinese || video.title}
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.onerror = () => { target.src = '/placeholder-video.jpg'; };
+                      target.src = `https://img.youtube.com/vi/${video.youtube_id}/hqdefault.jpg`;
+                    }}
+                    className="w-full aspect-video object-cover rounded-t-lg group-hover:scale-105 transition-transform duration-200"
+                  />
+                  {video.duration > 0 && (
+                    <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-1 rounded">
+                      {formatDuration(video.duration)}
+                    </div>
+                  )}
+                </div>
+              </Link>
+              <CardContent className="p-4">
+                <Link to={`/videos/${video.id}`}>
+                  <h3 className="font-semibold text-lg mb-2 line-clamp-2 group-hover:text-blue-600 transition-colors">
+                    {video.title_chinese || video.title}
+                  </h3>
+                </Link>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <span className="px-2 py-1 rounded text-xs font-medium text-white" style={{ backgroundColor: video.subject_color }}>
+                      {video.subject_name_chinese}
+                    </span>
+                    <Badge variant="outline">
+                      {video.grade_level}
+                    </Badge>
+                  </div>
+                  {video.chapter && (
+                    <p className="text-sm text-gray-600 line-clamp-1">
+                      {video.chapter}
+                      {video.topic && ` - ${video.topic}`}
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <div className="flex items-center space-x-2">
+                      <Eye className="h-3 w-3" />
+                      <span>{video.view_count}</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Clock className="h-3 w-3" />
+                      <span>
+                        {formatDuration(video.duration)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+    );
+  } else {
+    videoContent = (
+      <Card>
+        <CardContent className="text-center py-12">
+          <p className="text-gray-500 text-lg">暂无符合条件的视频</p>
+          <p className="text-gray-400 text-sm mt-2">请调整搜索条件或筛选器</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">视频学习</h1>
+        <p className="text-gray-600 mt-2">浏览和学习各科视频课程</p>
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Filter className="mr-2 h-5 w-5" />
+            筛选和搜索
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSearch} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Input placeholder="搜索视频标题或描述..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
+              </div>
+              <Select value={selectedSubject} onValueChange={(value) => { console.log('Subject selected:', value); setSelectedSubject(value); setSelectedChapter('all'); setCurrentPage(1); }} disabled={isLoadingSubjects}>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择学科" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">所有学科</SelectItem>
+                  {subjectItems}
+                </SelectContent>
+              </Select>
+              <Select value={selectedGrade} onValueChange={(value) => { console.log('Grade selected:', value); setSelectedGrade(value); setSelectedChapter('all'); setCurrentPage(1); }}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue placeholder="年级" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">所有年级</SelectItem>
+                  <SelectItem value="初中1">初中1</SelectItem>
+                  <SelectItem value="初中2">初中2</SelectItem>
+                  <SelectItem value="初中3">初中3</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={selectedChapter} onValueChange={(value) => { console.log('Chapter selected:', value); setSelectedChapter(value); setCurrentPage(1); }} disabled={isLoadingChapters || !chapters || chapters.length === 0}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="章节" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">所有章节</SelectItem>
+                  {chapterItems}
+                </SelectContent>
+              </Select>
+              <div className="flex space-x-2">
+                <Button type="submit" className="flex-1">搜索</Button>
+                <Button type="button" variant="outline" onClick={resetFilters}>重置</Button>
+              </div>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+      {pagination && (
+        <div className="flex justify-between items-center text-sm text-gray-600">
+          <span>
+            显示 {((pagination.page - 1) * pagination.limit) + 1} - {Math.min(pagination.page * pagination.limit, pagination.total)} 共 {pagination.total} 个结果
+          </span>
+          <span>
+            第 {pagination.page} 页，共 {pagination.pages} 页
+          </span>
+        </div>
+      )}
+      {videoContent}
+      {pagination && pagination.pages > 1 && (
+        <div className="flex justify-center space-x-2">
+          <Button variant="outline" disabled={pagination.page <= 1} onClick={() => setCurrentPage(pagination.page - 1)}>
+            上一页
+          </Button>
+          <div className="flex items-center space-x-1">
+            {[...Array(Math.min(5, pagination.pages))].map((_, i) => {
+              const pageNum = Math.max(1, pagination.page - 2) + i;
+              if (pageNum > pagination.pages) return null;
+              return (
+                <Button key={pageNum} variant={pageNum === pagination.page ? 'default' : 'outline'} size="sm" onClick={() => setCurrentPage(pageNum)}>
+                  {pageNum}
+                </Button>
+              );
+            })}
+          </div>
+          <Button variant="outline" disabled={pagination.page >= pagination.pages} onClick={() => setCurrentPage(pagination.page + 1)}>
+            下一页
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default VideoList;
