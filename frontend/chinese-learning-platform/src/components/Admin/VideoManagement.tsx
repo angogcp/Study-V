@@ -55,11 +55,13 @@ const formSchema = z.object({
 const VideoManagement: React.FC = () => {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingVideo, setEditingVideo] = useState<Video | null>(null);
-  const [chapters, setChapters] = useState<any[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedSubject, setSelectedSubject] = useState<number | null>(null);
-  const [selectedGrade, setSelectedGrade] = useState<string | null>(null);
+  const [editingVideo, setEditingVideo] = useState(null as Video | null);
+const [chapters, setChapters] = useState([] as any[]);
+const [searchTerm, setSearchTerm] = useState('');
+const [selectedSubject, setSelectedSubject] = useState(null as number | null);
+const [selectedGrade, setSelectedGrade] = useState(null as string | null);
+const [selectedChapter, setSelectedChapter] = useState(null as string | null);
+const [filterChapters, setFilterChapters] = useState([] as any[]);
   const [currentPage, setCurrentPage] = useState(1);
   const limit = 20;
 
@@ -83,9 +85,9 @@ const VideoManagement: React.FC = () => {
   const gradeLevel = watch('gradeLevel');
 
   const { data: videosData } = useQuery({
-    queryKey: ['videos', searchTerm, selectedSubject, selectedGrade, currentPage],
-    queryFn: () => VideoService.getAllVideos({ search: searchTerm, subject_id: selectedSubject, grade_level: selectedGrade, page: currentPage, limit }),
-  });
+  queryKey: ['videos', searchTerm, selectedSubject, selectedGrade, selectedChapter, currentPage],
+  queryFn: () => VideoService.getAllVideos({ search: searchTerm, subject_id: selectedSubject, grade_level: selectedGrade, chapter: selectedChapter, page: currentPage, limit }),
+});
   const videos = videosData?.videos || [];
   const pagination = videosData?.pagination;
 
@@ -95,33 +97,52 @@ const VideoManagement: React.FC = () => {
   });
 
   useEffect(() => {
+    if (selectedSubject && selectedGrade) {
+      ChapterService.getChapters({
+        subject_id: selectedSubject,
+        grade_level: selectedGrade,
+      }).then(setFilterChapters);
+    } else {
+      setFilterChapters([]);
+      setSelectedChapter(null);
+    }
+  }, [selectedSubject, selectedGrade]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedSubject, selectedGrade, selectedChapter]);
+
+  useEffect(() => {
+    if (editingVideo) {
+      reset({
+        title: editingVideo.title || '',
+        titleChinese: editingVideo.title_chinese || '',
+        description: editingVideo.description || '',
+        youtubeUrl: editingVideo.youtube_url || '',
+        subjectId: editingVideo.subject_id || 0,
+        gradeLevel: editingVideo.grade_level || '初中1',
+        chapter: editingVideo.chapter || '',
+        topic: editingVideo.topic || '',
+        difficultyLevel: editingVideo.difficulty_level || 'medium',
+        sortOrder: editingVideo.sort_order || 0,
+      });
+    }
+  }, [editingVideo, reset]);
+
+  useEffect(() => {
     if (subjectId && gradeLevel) {
       ChapterService.getChapters({
         subject_id: subjectId,
         grade_level: gradeLevel,
       }).then(setChapters);
+    } else {
+      setChapters([]);
     }
   }, [subjectId, gradeLevel]);
 
   useEffect(() => {
-    if (editingVideo) {
-      setValue('title', editingVideo.title);
-      setValue('titleChinese', editingVideo.title_chinese || '');
-      setValue('description', editingVideo.description || '');
-      setValue('youtubeUrl', editingVideo.youtube_url);
-      setValue('subjectId', editingVideo.subject_id);
-      setValue('gradeLevel', editingVideo.grade_level);
-      setValue('chapter', editingVideo.chapter || '');
-      setValue('topic', editingVideo.topic || '');
-      setValue('difficultyLevel', editingVideo.difficulty_level);
-      setValue('sortOrder', editingVideo.sort_order);
-      setIsDialogOpen(true);
-    }
-  }, [editingVideo, setValue]);
-
-  useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedSubject, selectedGrade]);
+  }, [searchTerm, selectedSubject, selectedGrade, selectedChapter]);
 
   const createMutation = useMutation({
     mutationFn: (data: FormData) => VideoService.createVideo(data),
@@ -319,6 +340,18 @@ const VideoManagement: React.FC = () => {
             ))}
           </SelectContent>
         </Select>
+        <Select value={selectedChapter || ''} onValueChange={(v) => setSelectedChapter(v || null)} disabled={!filterChapters.length}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="选择章节" />
+          </SelectTrigger>
+          <SelectContent>
+            {filterChapters.map((chapter) => (
+              <SelectItem key={chapter.id} value={chapter.name}>
+                {chapter.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <Table>
         <TableHeader>
@@ -338,7 +371,7 @@ const VideoManagement: React.FC = () => {
               <TableCell>{video.grade_level}</TableCell>
               <TableCell>{video.chapter}</TableCell>
               <TableCell>
-                <Button variant="ghost" size="sm" onClick={() => setEditingVideo(video)}>
+                <Button variant="ghost" size="sm" onClick={() => { setEditingVideo(video); setIsDialogOpen(true); }}>
                   <Pencil className="h-4 w-4" />
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(video.id)}>

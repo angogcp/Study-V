@@ -2,8 +2,8 @@ import api from '@/lib/api';
 import { User } from '@/types';
 
 export class UserService {
-  static async getAllUsers(params?: { search?: string; page?: number; limit?: number }): Promise<{ users: User[]; totalPages: number }> {
-    const response = await api.get<{ users: User[]; totalPages: number }>('/users', { params });
+  static async getAllUsers(params?: { search?: string; page?: number; limit?: number }): Promise<{ users: User[]; totalPages: number; totalCount: number }> {
+    const response = await api.get<{ users: User[]; totalPages: number; totalCount: number }>('/users', { params });
     return response.data;
   }
 

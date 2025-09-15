@@ -41,7 +41,18 @@ router.get('/', authenticateToken, requireAdmin, (req, res) => {
         db.close();
         return res.status(500).json({ error: 'Database error' });
       }
-      res.json({ users, totalPages });
+      
+      // 转换数据格式以匹配前端期望
+      const formattedUsers = users.map(user => ({
+        id: user.id,
+        email: user.email,
+        fullName: user.full_name,
+        role: user.role,
+        gradeLevel: user.grade_level,
+        createdAt: user.created_at
+      }));
+      
+      res.json({ users: formattedUsers, totalPages, totalCount: totalUsers });
       db.close();
     });
   });

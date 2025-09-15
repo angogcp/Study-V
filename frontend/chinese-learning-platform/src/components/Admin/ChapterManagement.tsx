@@ -35,7 +35,7 @@ function ChapterManagement() {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
   const gradeLevels = ['初中1', '初中2', '初中3'];
-  const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm<z.infer<typeof chapterSchema>>({
+  const { register, handleSubmit, setValue, reset, formState: { errors }, watch } = useForm<z.infer<typeof chapterSchema>>({
     resolver: zodResolver(chapterSchema),
   });
 
@@ -190,7 +190,7 @@ function ChapterManagement() {
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                 <div>
                   <Label htmlFor="subject_id">科目</Label>
-                  <Select onValueChange={(value) => setValue('subject_id', parseInt(value))} >
+                  <Select value={watch('subject_id')?.toString()} onValueChange={(value) => setValue('subject_id', parseInt(value))} >
                     <SelectTrigger>
                       <SelectValue placeholder="Select subject" />
                     </SelectTrigger>
@@ -204,7 +204,7 @@ function ChapterManagement() {
                 </div>
                 <div>
                   <Label htmlFor="grade_level">年级</Label>
-                  <Select onValueChange={(value) => setValue('grade_level', value)} >
+                  <Select value={watch('grade_level')} onValueChange={(value) => setValue('grade_level', value)} >
                     <SelectTrigger>
                       <SelectValue placeholder="Select grade" />
                     </SelectTrigger>

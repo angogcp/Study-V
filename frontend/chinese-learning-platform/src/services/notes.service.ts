@@ -65,4 +65,15 @@ export class NotesService {
     });
     return response.data;
   }
+
+  static async exportNotesMarkdown(params: {
+    noteIds?: number[];
+    videoId?: number;
+    format?: 'detailed' | 'summary';
+  }): Promise<Blob> {
+    const response = await api.post('/notes/export/markdown', params, {
+      responseType: 'blob',
+    });
+    return response.data;
+  }
 }

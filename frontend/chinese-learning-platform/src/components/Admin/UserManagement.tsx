@@ -36,8 +36,17 @@ const UserManagement: React.FC = () => {
 
   const { data: usersData, isLoading, isError, error } = useQuery({
     queryKey: ['users', searchTerm, currentPage],
-    queryFn: () => UserService.getAllUsers({ search: searchTerm, page: currentPage, limit: 10 }),
+    queryFn: async () => {
+      try {
+        return await UserService.getAllUsers({ search: searchTerm, page: currentPage, limit: itemsPerPage });
+      } catch (error) {
+        console.error('Error fetching users:', error);
+        return { users: [], totalPages: 1, totalCount: 0 };
+      }
+    },
     keepPreviousData: true,
+    staleTime: 5000,
+    retry: 3,
   });
 
   const totalPages = usersData?.totalPages || 1;
@@ -50,7 +59,6 @@ const UserManagement: React.FC = () => {
     setCurrentPage((prevPage) => Math.min(prevPage + 1, totalPages));
   };
   const users = usersData?.users || [];
-  // const totalPages = usersData?.totalPages || 1; // This line is redundant and should be removed
 
   const createMutation = useMutation({
     mutationFn: UserService.createUser,
