@@ -21,7 +21,8 @@ import {
   Settings, 
   LogOut,
   GraduationCap,
-  Users
+  Users,
+  MessageCircle
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -66,6 +67,12 @@ const Layout: React.FC = () => {
       href: '/notes',
       icon: FileText,
       current: location.pathname.startsWith('/notes')
+    },
+    {
+      name: '学习助手',
+      href: '/chatbot',
+      icon: MessageCircle,
+      current: location.pathname === '/chatbot'
     },
   ];
 

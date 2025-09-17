@@ -13,6 +13,7 @@ const progressRoutes = require('./routes/progress');
 const notesRoutes = require('./routes/notes');
 const chapterRoutes = require('./routes/chapters');
 const userRoutes = require('./routes/users');
+const chatbotRoutes = require('./routes/chatbot');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -76,6 +77,7 @@ app.use('/api/progress', progressRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/chapters', chapterRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/chatbot', chatbotRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

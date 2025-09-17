@@ -1,3 +1,4 @@
+console.log('Starting initialization');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bcrypt = require('bcryptjs');
@@ -134,4 +135,6 @@ function initializeDatabase() {
   db.close();
 }
 
+console.log('Starting initialization');
 module.exports = { initializeDatabase, dbPath };
+initializeDatabase();

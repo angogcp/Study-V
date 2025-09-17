@@ -18,6 +18,7 @@ import LearningProgress from '@/components/Progress/LearningProgress';
 import api from '@/lib/api';
 import SubjectManagement from '@/components/Admin/SubjectManagement';
 import ChapterManagement from '@/components/Admin/ChapterManagement';
+import ChatbotPage from '@/pages/ChatbotPage';
 
 const defaultQueryFn = async ({ queryKey }) => {
   // 处理数组形式的queryKey
@@ -59,37 +60,38 @@ const queryClient = new QueryClient({
   },
 });
 
-// Protected Route Component
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth();
-  
-  if (isLoading) {
-    return <LoadingSpinner />;
-  }
-  
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-  
-  return <>{children}</>;
-};
+// Routes Component that uses Auth Context
+const AppRoutesWithAuth: React.FC = () => {
+  // Protected Route Component
+  const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const { isAuthenticated, isLoading } = useAuth();
+    
+    if (isLoading) {
+      return <LoadingSpinner />;
+    }
+    
+    if (!isAuthenticated) {
+      return <Navigate to="/login" replace />;
+    }
+    
+    return <>{children}</>;
+  };
 
-// Public Route Component (redirect to dashboard if already logged in)
-const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth();
-  
-  if (isLoading) {
-    return <LoadingSpinner />;
-  }
-  
-  if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
-  }
-  
-  return <>{children}</>;
-};
+  // Public Route Component (redirect to dashboard if already logged in)
+  const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const { isAuthenticated, isLoading } = useAuth();
+    
+    if (isLoading) {
+      return <LoadingSpinner />;
+    }
+    
+    if (isAuthenticated) {
+      return <Navigate to="/dashboard" replace />;
+    }
+    
+    return <>{children}</>;
+  };
 
-function AppRoutes() {
   return (
     <Routes>
       {/* Public Routes */}
@@ -117,6 +119,7 @@ function AppRoutes() {
         {/* Additional routes can be added here */}
         <Route path="progress" element={<LearningProgress />} />
         <Route path="notes" element={<MyNotes />} />
+        <Route path="chatbot" element={<ChatbotPage />} />
         <Route path="settings" element={<div className="p-8 text-center text-gray-500">设置页面开发中...</div>} />
         
         {/* Admin Routes */}
@@ -130,7 +133,7 @@ function AppRoutes() {
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
-}
+};
 
 function App() {
   return (
@@ -138,7 +141,7 @@ function App() {
       <Router>
         <AuthProvider>
           <div className="App">
-            <AppRoutes />
+            <AppRoutesWithAuth />
             <Toaster 
               position="top-right"
               toastOptions={{
