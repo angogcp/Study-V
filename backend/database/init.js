@@ -3,12 +3,24 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+require('dotenv').config();
 
-const dbPath = path.join(__dirname, '..', 'learning_platform.db');
+// Use environment variable if available, otherwise use default path
+const dbPath = process.env.DB_PATH 
+  ? process.env.DB_PATH 
+  : path.join(__dirname, '..', 'learning_platform.db');
+
+// For Vercel serverless environment, use in-memory database
+const isVercel = process.env.VERCEL === '1';
 
 // Initialize database and create tables
 function initializeDatabase() {
-  const db = new sqlite3.Database(dbPath);
+  // Use in-memory database on Vercel
+  const db = isVercel 
+    ? new sqlite3.Database(':memory:')
+    : new sqlite3.Database(dbPath);
+    
+  console.log(`Initializing database: ${isVercel ? 'in-memory (Vercel)' : dbPath}`);
 
   db.serialize(() => {
     // Create user_profiles table
