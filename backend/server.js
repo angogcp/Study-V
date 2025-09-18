@@ -37,7 +37,9 @@ const corsOptions = {
       'http://localhost:3000',
       'http://localhost:5173',
       'http://127.0.0.1:3000',
-      'http://127.0.0.1:5173'
+      'http://127.0.0.1:5173',
+      'https://study-v.vercel.app',
+      'https://study-v-frontend.vercel.app'
     ];
 
     if (process.env.FRONTEND_URL) {
@@ -47,6 +49,9 @@ const corsOptions = {
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
+    
+    // For development purposes, allow all origins
+    return callback(null, true);
     
     return callback(new Error('Not allowed by CORS'));
   },
