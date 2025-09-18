@@ -14,6 +14,7 @@ const notesRoutes = require('./routes/notes');
 const chapterRoutes = require('./routes/chapters');
 const userRoutes = require('./routes/users');
 const chatbotRoutes = require('./routes/chatbot');
+const testRoutes = require('./routes/test');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -87,6 +88,10 @@ app.use('/api/notes', notesRoutes);
 app.use('/api/chapters', chapterRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/chatbot', chatbotRoutes);
+app.use('/api/test', testRoutes);
+
+// Auth routes without /api prefix for compatibility
+app.use('/auth', authRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
