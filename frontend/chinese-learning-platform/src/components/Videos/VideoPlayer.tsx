@@ -204,30 +204,30 @@ const handleDeleteNote = (id: number) => {
 };
 
 // Handle sending message to chatbot
-  const handleSendMessage = async (message: string) => {
-    // Add user message to chat
-    setChatMessages(prev => [...prev, { role: 'user', content: message }]);
+  const handleSendMessage = async (message: string, image?: string) => {
+    const newMessage: ChatMessage = { role: 'user', content: message };
+    if (image) {
+      newMessage.image = image;
+    }
+    setChatMessages((prev) => [...prev, newMessage]);
+
     setIsChatLoading(true);
-    
+
     try {
-      // Call the chatbot API with video context
-      const response = await ChatbotService.sendMessage(message, {
-        grade: video?.grade_level || '',
-        subject: video?.subject_name_chinese || '',
-        topic: video?.topic || '',
-        title: video?.title_chinese || video?.title || '',
-        currentTime: formatTime(currentTime)
-      });
-      
-      // Add bot response to chat
-      setChatMessages(prev => [...prev, { role: 'bot', content: response.message }]);
+      const videoContext = {
+        grade: video.grade,
+        subject: video.subject,
+        topic: video.topic,
+        title: video.title,
+        currentTime: player?.getCurrentTime(),
+      };
+
+      const response = await ChatbotService.sendMessage(message, videoContext, image);
+
+      setChatMessages((prev) => [...prev, { role: 'bot', content: response.message }]);
     } catch (error) {
-      console.error('Error sending message to chatbot:', error);
-      setChatMessages(prev => [...prev, { 
-        role: 'bot', 
-        content: '抱歉，我遇到了一些问题。请稍后再试。' 
-      }]);
-      toast.error('聊天机器人服务暂时不可用');
+      console.error('Error sending message:', error);
+      setChatMessages((prev) => [...prev, { role: 'bot', content: '抱歉，发生错误。请重试。' }]);
     } finally {
       setIsChatLoading(false);
     }
@@ -393,64 +393,47 @@ useEffect(() => {
   }
 
 const handleCaptureScreenshot = async () => {
-  if (!player) {
+  if (!player || !video?.youtube_id) {
     toast.error('视频播放器未准备就绪');
     return;
   }
 
   try {
-    // 获取视频播放器容器元素
-    const videoContainer = document.querySelector('.aspect-[16\/9]');
-    if (!videoContainer) {
-      throw new Error('无法找到视频容器');
-    }
+    // 调用后端API捕获截图
+    const { image } = await ChatbotService.captureScreenshot(video.youtube_id, currentTime);
 
-    // 动态导入html2canvas库
-    const html2canvas = (await import('html2canvas')).default;
-    
-    // 使用html2canvas捕获整个视频区域的屏幕内容
-    const canvas = await html2canvas(videoContainer as HTMLElement, {
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: null,
-      scale: 1,
-      logging: false,
-      onclone: (clonedDoc) => {
-        // 在克隆的文档中确保iframe可见
-        const iframe = clonedDoc.querySelector('iframe');
-        if (iframe) {
-          (iframe as HTMLIFrameElement).style.visibility = 'visible';
-        }
-      }
+    // 创建图像元素
+    const img = new Image();
+    img.src = image;
+    await new Promise((resolve) => {
+      img.onload = resolve;
     });
 
-    // 创建一个新的canvas来添加信息覆盖层
-    const finalCanvas = document.createElement('canvas');
-    finalCanvas.width = canvas.width;
-    finalCanvas.height = canvas.height + 60; // 增加高度用于信息栏
-    const ctx = finalCanvas.getContext('2d');
-    
+    // 创建canvas添加信息覆盖层
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height + 60;
+    const ctx = canvas.getContext('2d');
+
     if (!ctx) {
       throw new Error('无法创建canvas上下文');
     }
 
-    // 绘制原始截图
-    ctx.drawImage(canvas, 0, 0);
-    
-    // 添加半透明信息栏在底部
+    // 绘制图像
+    ctx.drawImage(img, 0, 0);
+
+    // 添加信息栏
     ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(0, canvas.height, finalCanvas.width, 60);
-    
-    // 添加视频信息
+    ctx.fillRect(0, img.height, canvas.width, 60);
+
     ctx.fillStyle = '#fff';
     ctx.font = '14px Arial';
     ctx.textAlign = 'left';
-    
-    // 视频标题（截断处理）
+
+    // 标题
     const title = video.title_chinese || video.title;
-    const maxTitleWidth = finalCanvas.width - 200;
     let displayTitle = title;
-    
+    const maxTitleWidth = canvas.width - 200;
     if (ctx.measureText(title).width > maxTitleWidth) {
       for (let i = title.length; i > 0; i--) {
         const testTitle = title.substring(0, i) + '...';
@@ -460,28 +443,29 @@ const handleCaptureScreenshot = async () => {
         }
       }
     }
-    
-    ctx.fillText(displayTitle, 10, canvas.height + 20);
-    
-    // 时间信息
-    ctx.fillText(`时间: ${formatTime(currentTime)} / ${formatTime(duration)}`, 10, canvas.height + 40);
-    
-    // 进度信息
+    ctx.fillText(displayTitle, 10, img.height + 20);
+
+    // 时间
+    ctx.fillText(`时间: ${formatTime(currentTime)} / ${formatTime(duration)}`, 10, img.height + 40);
+
+    // 进度
     ctx.textAlign = 'right';
-    ctx.fillText(`进度: ${Math.round(progressPercentage)}%`, finalCanvas.width - 10, canvas.height + 20);
-    
+    ctx.fillText(`进度: ${Math.round(progressPercentage)}%`, canvas.width - 10, img.height + 20);
+
     // 截图时间
     const now = new Date();
-    ctx.fillText(`截图时间: ${now.toLocaleString('zh-CN')}`, finalCanvas.width - 10, canvas.height + 40);
-    
-    const image = finalCanvas.toDataURL('image/png');
+    ctx.fillText(`截图时间: ${now.toLocaleString('zh-CN')}`, canvas.width - 10, img.height + 40);
+
+    const finalImage = canvas.toDataURL('image/png');
+
+    // 添加到聊天
     setChatMessages(prev => [...prev, {
       role: 'user',
       content: `在 ${formatTime(currentTime)} 处截取的视频画面`,
-      image
+      image: finalImage
     }]);
-    toast.success('视频截图已添加到聊天中!');
     
+    toast.success('视频截图已添加到聊天中!');
   } catch (error) {
     console.error('截图失败:', error);
     toast.error('截图失败，请重试');

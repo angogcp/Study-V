@@ -135,6 +135,4 @@ function initializeDatabase() {
   db.close();
 }
 
-console.log('Starting initialization');
 module.exports = { initializeDatabase, dbPath };
-initializeDatabase();

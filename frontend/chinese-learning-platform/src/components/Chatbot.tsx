@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send } from 'lucide-react';
+import { Send, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
 
 interface ChatMessage {
   role: 'user' | 'bot';
@@ -14,22 +15,35 @@ interface ChatMessage {
 
 interface ChatbotProps {
   messages: ChatMessage[];
-  onSendMessage: (message: string) => void;
+  onSendMessage: (message: string, image?: string) => void;
   isLoading: boolean;
 }
 
 const Chatbot: React.FC<ChatbotProps> = ({ messages, onSendMessage, isLoading }) => {
   const [inputValue, setInputValue] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSendMessage = () => {
-    if (inputValue.trim() && !isLoading) {
-      onSendMessage(inputValue);
+  const handleSendMessage = async () => {
+    if (isLoading) return;
+
+    let imageBase64: string | undefined;
+    if (selectedFile) {
+      const reader = new FileReader();
+      reader.readAsDataURL(selectedFile);
+      await new Promise((resolve) => { reader.onload = resolve; });
+      imageBase64 = reader.result as string;
+      setSelectedFile(null);
+    }
+
+    if (inputValue.trim() || imageBase64) {
+      onSendMessage(inputValue.trim() || 'Please analyze this image', imageBase64);
       setInputValue('');
     }
   };
@@ -62,12 +76,18 @@ const Chatbot: React.FC<ChatbotProps> = ({ messages, onSendMessage, isLoading })
                 className={cn(
                   "rounded-lg p-3",
                   message.role === 'user'
-                    ? "bg-primary text-primary-foreground"
+                    ? "bg-primary text-white"
                     : "bg-muted"
                 )}
               >
                 {message.image && <img src={message.image} alt="Screenshot" className="max-w-full rounded mb-2" />}
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                {message.role === 'bot' ? (
+                  <div className="whitespace-pre-wrap prose prose-sm max-w-none">
+                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                )}
               </div>
               {message.role === 'user' && (
                 <Avatar className="h-8 w-8">
@@ -103,8 +123,23 @@ const Chatbot: React.FC<ChatbotProps> = ({ messages, onSendMessage, isLoading })
           className="flex-1"
         />
         <Button 
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isLoading}
+          size="icon"
+          variant="outline"
+        >
+          <Upload className="h-4 w-4" />
+        </Button>
+        <input
+          type="file"
+          accept="image/*"
+          ref={fileInputRef}
+          onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+          className="hidden"
+        />
+        <Button 
           onClick={handleSendMessage} 
-          disabled={!inputValue.trim() || isLoading}
+          disabled={isLoading || (!inputValue.trim() && !selectedFile)}
           size="icon"
         >
           <Send className="h-4 w-4" />

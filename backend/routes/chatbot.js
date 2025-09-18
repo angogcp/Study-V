@@ -1,8 +1,17 @@
 const express = require('express');
+const path = require('path');
 const { authenticateToken } = require('../middleware/auth');
 const { getDatabase } = require('../database/connection');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
+const fs = require('fs');
+const sharp = require('sharp');
+const Tesseract = require('tesseract.js');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+const ytdl = require('ytdl-core');
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const router = express.Router();
 
@@ -74,42 +83,54 @@ function determineSubject(message) {
 }
 
 // Generate a response using DeepSeek LLM API
-async function generateLLMResponse(message, videoContext = null) {
+async function generateLLMResponse(message, image, userId, videoId) {
   try {
-    // 构建系统提示，包含苏格拉底式教学方法和视频上下文（如果有）
-    let systemPrompt = "你是一位使用苏格拉底式教学法的中文学习助手。引导学生通过提问来思考问题，而不是直接给出答案。";
-    
-    // 如果有视频上下文信息，添加到系统提示中
-    if (videoContext) {
-      systemPrompt += `\n\n当前学生正在观看以下视频：\n- 年级: ${videoContext.grade || '未知'}\n- 科目: ${videoContext.subject || '未知'}\n- 主题: ${videoContext.topic || '未知'}\n\n根据这个上下文来回答学生的问题。`;
-    }
-
-    // 调用DeepSeek API
-    const response = await axios.post(
-      DEEPSEEK_API_URL,
-      {
-        model: "deepseek-chat",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: message }
-        ],
-        temperature: 0.7,
-        max_tokens: 800
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
-        }
+    let videoContext = null;
+    let contextMarkdown = '';
+    const db = getDatabase();
+    if (videoId) {
+      videoContext = await new Promise((resolve) => {
+        db.get('SELECT v.title, v.title_chinese, v.description, v.grade_level, v.chapter, s.name_chinese as subject FROM videos v LEFT JOIN subjects s ON v.subject_id = s.id WHERE v.youtube_id = ?', [videoId], (err, row) => {
+          if (err) console.error('Database query error:', err);
+          resolve(row);
+        });
+      });
+      if (videoContext) {
+        contextMarkdown = `# Video Context\n\nTitle: ${videoContext.title_chinese || videoContext.title}\nDescription: ${videoContext.description || 'No description'}\nSubject: ${videoContext.subject || 'Unknown'}\nGrade: ${videoContext.grade_level || 'Unknown'}\nChapter: ${videoContext.chapter || 'Unknown'}`;
       }
-    );
-
-    // 返回LLM生成的回复
-    return response.data.choices[0].message.content;
+    }
+    let ocrText = '';
+    let ocrMarkdown = '';
+    if (image) {
+      ocrText = await extractTextFromImage(image);
+      ocrMarkdown = `# OCR Extracted Text\n\n\`\`\`\n${ocrText}\n\`\`\``;
+    }
+    let systemPrompt = "你是一位使用苏格拉底式教学法的中文学习助手。引导学生通过提问来思考问题，而不是直接给出答案。";
+    let userPrompt = message;
+    if (contextMarkdown) {
+      userPrompt += `\n${contextMarkdown}`;
+    }
+    if (ocrMarkdown) {
+      userPrompt += `\n${ocrMarkdown}`;
+    }
+    const response = await axios.post(DEEPSEEK_API_URL, {
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 500
+    }, {
+      headers: {
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    return { llmResponse: response.data.choices[0].message.content, ocrMarkdown };
   } catch (error) {
-    console.error('DeepSeek API调用失败:', error.response?.data || error.message);
-    // 如果API调用失败，回退到本地生成的回复
-    return generateFallbackResponse(message);
+    console.error('DeepSeek API call failed:', error.response ? error.response.data : error.message);
+    return { llmResponse: generateFallbackResponse(message), ocrMarkdown: '' };
   }
 }
 
@@ -122,7 +143,7 @@ function generateFallbackResponse(message) {
   if (message.includes('?') || message.includes('？')) {
     // If user asks a question, guide them to think through it
     const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
-    return `我理解你的问题。让我们一起思考：${randomPrompt}`;
+    return `我理解你的问题。together思考：${randomPrompt}`;
   } else if (message.length < 20) {
     // If message is too short, ask for more details
     return "能否请你详细描述一下你的问题或想法？这样我才能更好地引导你思考。";
@@ -184,26 +205,31 @@ ensureChatMessagesTable();
 
 // Send message to chatbot
 router.post('/message', authenticateToken, async (req, res) => {
-  const { message, userId, videoContext } = req.body;
+  const { message, image, videoId } = req.body;
+  const userId = req.user.id;
+  console.log('Received image:', !!image);
   
-  if (!message) {
-    return res.status(400).json({ error: 'Message is required' });
+  if (!message && !image) {
+    return res.status(400).json({ error: 'Message or image is required' });
   }
   
-  // Save user message
-  saveChatMessage(userId || req.user.userId, message, true);
+  const effectiveUserId = userId || req.user.userId;
+  
+  // Save user message or image
+  const contentToSave = image ? JSON.stringify({ type: 'image', content: image }) : message;
+  saveChatMessage(effectiveUserId, contentToSave, true);
+  
+  let effectiveMessage = message || '';
   
   try {
-    // Generate response using DeepSeek LLM API
-    const response = await generateLLMResponse(message, videoContext);
+    const result = await generateLLMResponse(effectiveMessage, image, effectiveUserId, videoId);
     
-    // Save bot response
-    saveChatMessage(userId || req.user.userId, response, false);
+    saveChatMessage(effectiveUserId, result.llmResponse, false);
     
-    // Return response
     res.json({ 
-      message: response,
-      socraticHints: socraticPrompts[determineSubject(message)]
+      message: result.llmResponse,
+      socraticHints: socraticPrompts[determineSubject(effectiveMessage)],
+      ocrMarkdown: result.ocrMarkdown
     });
   } catch (error) {
     console.error('Error generating response:', error);
@@ -241,4 +267,123 @@ router.get('/history', authenticateToken, (req, res) => {
   );
 });
 
+// Import puppeteer for screenshot functionality
+const puppeteer = require('puppeteer');
+const tesseract = require('tesseract.js');
+
+// New endpoint for capturing YouTube video frame
+router.post('/screenshot', authenticateToken, async (req, res) => {
+  const { videoId, time } = req.body;
+  
+  if (!videoId || time === undefined) {
+    return res.status(400).json({ error: 'videoId and time are required' });
+  }
+
+  const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}&t=${time}`;
+
+  try {
+    const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']});
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 720 });
+    await page.goto(youtubeUrl, {waitUntil: 'networkidle2'});
+
+    // Enable subtitles if available
+    await page.waitForSelector('.ytp-subtitles-button', {timeout: 5000}).catch(() => {});
+    await page.evaluate(() => {
+      const ccButton = document.querySelector('.ytp-subtitles-button');
+      if (ccButton && ccButton.getAttribute('aria-pressed') === 'false') {
+        ccButton.click();
+      }
+    });
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Seek to time
+    await page.waitForSelector('video');
+    await page.evaluate((t) => {
+      const video = document.querySelector('video');
+      video.currentTime = t;
+    }, time);
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for seek and render
+
+    // Screenshot the player container to include subtitles
+    const playerElement = await page.$('#movie_player');
+    console.log('Player element found:', !!playerElement);
+    const screenshot = await playerElement.screenshot({encoding: 'base64'});
+    console.log('Screenshot size:', screenshot.length);
+
+    await browser.close();
+
+    res.json({ image: `data:image/png;base64,${screenshot}` });
+  } catch (error) {
+    console.error('Screenshot error:', error);
+    res.status(500).json({ error: 'Failed to capture screenshot' });
+  }
+});
+
 module.exports = router;
+
+
+async function extractTextFromImage(base64Image) {
+  try {
+    // Remove data URL prefix if present
+    if (base64Image.startsWith('data:image/')) {
+      base64Image = base64Image.split(',')[1];
+    }
+    const buffer = Buffer.from(base64Image, 'base64');
+    const metadata = await sharp(buffer).metadata();
+    console.log('Original image dimensions:', metadata.width, 'x', metadata.height);
+    console.log('Starting OCR with image length:', buffer.length);
+    console.log('Buffer length:', buffer.length);
+    
+    const cropHeight = Math.floor(metadata.height * 0.3);
+    const cropTop = metadata.height - cropHeight;
+    
+    const processedBuffer = await sharp(buffer)
+      .extract({ left: 0, top: cropTop, width: metadata.width, height: cropHeight })
+      .resize({ width: 2000, kernel: sharp.kernel.lanczos3 })
+      .grayscale()
+      .median(3)
+      .negate()
+      .normalize()
+      .sharpen({ sigma: 2 })
+      .threshold(128)
+      .toBuffer();
+    
+    // Detect orientation
+    const osdWorker = await Tesseract.createWorker('osd', 1, {
+      langPath: path.join(__dirname, '..')
+    });
+    await osdWorker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.OSD_ONLY });
+    const { data: osdData } = await osdWorker.recognize(processedBuffer);
+    await osdWorker.terminate();
+    
+    const orientationMatch = osdData.text.match(/Orientation in degrees:\\s*(\\d+)/);
+    let orientation = 0;
+    if (orientationMatch) {
+      orientation = parseInt(orientationMatch[1]);
+    }
+    
+    let ocrBuffer = processedBuffer;
+    if (orientation !== 0) {
+      console.log(`Rotating image by ${-orientation} degrees`);
+      ocrBuffer = await sharp(processedBuffer).rotate(-orientation).toBuffer();
+    }
+    
+    const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
+      langPath: path.join(__dirname, '..')
+    });
+    await worker.setParameters({
+      tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+      tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ一二三四五六七八九十百千万亿的了是我不人在他有这个上们来到时大地为子中你说生国年着就那和要她出得以里后自以会家可下过天去能对小多然于心学么之都好看起发当没成只如事把还用第样道想作种开美总从无情己面最女但现前些所同日手又行意动方期它头经长儿回位分爱老因很给名法间斯知世什两次使身者被高已亿来分钟秒全字幕功能'
+    });
+    
+    const { data: { text } } = await worker.recognize(ocrBuffer);
+    console.log('Extracted text:', text);
+    await worker.terminate();
+    
+    return text.trim();
+  } catch (error) {
+    console.error('Error in extractTextFromImage:', error);
+    return '';
+  }
+}

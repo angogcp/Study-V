@@ -18,6 +18,7 @@ interface ChatRequest {
   userId?: string;
   context?: ChatMessage[];
   videoContext?: VideoContext;
+  image?: string;
 }
 
 interface ChatResponse {
@@ -26,15 +27,21 @@ interface ChatResponse {
 }
 
 export class ChatbotService {
-  static async sendMessage(message: string, videoContext?: VideoContext): Promise<ChatResponse> {
+  static async sendMessage(message: string, videoContext?: VideoContext, image?: string): Promise<ChatResponse> {
     const userId = localStorage.getItem('userId') || '';
     const data: ChatRequest = {
       message,
       userId,
-      videoContext
+      videoContext,
+      image
     };
     
     const response = await api.post<ChatResponse>('/chatbot/message', data);
+    return response.data;
+  }
+
+  static async captureScreenshot(videoId: string, time: number): Promise<{image: string}> {
+    const response = await api.post<{image: string}>('/chatbot/screenshot', { videoId, time });
     return response.data;
   }
 }

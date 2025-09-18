@@ -24,6 +24,7 @@ router.post('/register', (req, res) => {
     [userUuid, email, hashedPassword, fullName, gradeLevel || '初中1'],
     function(err) {
       if (err) {
+        db.close();
         if (err.message.includes('UNIQUE constraint failed')) {
           return res.status(400).json({ error: 'Email already registered' });
         }
@@ -36,6 +37,7 @@ router.post('/register', (req, res) => {
         { expiresIn: '7d' }
       );
 
+      db.close();
       res.json({
         message: 'User registered successfully',
         user: { id: userUuid, email, fullName, role: 'student', gradeLevel },
@@ -43,8 +45,6 @@ router.post('/register', (req, res) => {
       });
     }
   );
-
-  db.close();
 });
 
 // Login
@@ -62,15 +62,18 @@ router.post('/login', (req, res) => {
     [email],
     (err, user) => {
       if (err) {
+        db.close();
         return res.status(500).json({ error: 'Database error' });
       }
 
       if (!user) {
+        db.close();
         return res.status(401).json({ error: 'Invalid email or password' });
       }
 
       const isValidPassword = bcrypt.compareSync(password, user.password_hash);
       if (!isValidPassword) {
+        db.close();
         return res.status(401).json({ error: 'Invalid email or password' });
       }
 
@@ -80,6 +83,7 @@ router.post('/login', (req, res) => {
         { expiresIn: '7d' }
       );
 
+      db.close();
       res.json({
         message: 'Login successful',
         user: {
@@ -96,8 +100,6 @@ router.post('/login', (req, res) => {
       });
     }
   );
-
-  db.close();
 });
 
 // Get current user profile
@@ -109,13 +111,16 @@ router.get('/profile', require('../middleware/auth').authenticateToken, (req, re
     [req.user.id],
     (err, user) => {
       if (err) {
+        db.close();
         return res.status(500).json({ error: 'Database error' });
       }
 
       if (!user) {
+        db.close();
         return res.status(404).json({ error: 'User not found' });
       }
 
+      db.close();
       res.json({
         id: user.user_uuid,
         email: user.email,
@@ -130,8 +135,6 @@ router.get('/profile', require('../middleware/auth').authenticateToken, (req, re
       });
     }
   );
-
-  db.close();
 });
 
 module.exports = router;

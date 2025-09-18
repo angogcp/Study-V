@@ -63,8 +63,8 @@ const corsOptions = {
 
 // Middleware
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve static files (for file uploads, avatars, etc.)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -113,5 +113,7 @@ const server = app.listen(PORT, () => {
   console.log(`🌐 API available at: http://localhost:${PORT}/api`);
   console.log(`🏥 Database: SQLite3 local storage`);
 });
+
+console.log('After listen');
 
 module.exports = app;
