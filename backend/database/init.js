@@ -119,19 +119,17 @@ function initializeDatabase() {
     });
     insertSubject.finalize();
 
-    // Create default admin user only in development
-    if (process.env.NODE_ENV === 'development') {
-      const adminEmail = 'admin@example.com';
-      const adminPassword = 'admin123';
-      const hashedPassword = bcrypt.hashSync(adminPassword, 10);
-      const adminUuid = uuidv4();
+    // Create default admin user
+    const adminEmail = 'admin@example.com';
+    const adminPassword = 'admin123';
+    const hashedPassword = bcrypt.hashSync(adminPassword, 10);
+    const adminUuid = uuidv4();
 
-      db.run(`INSERT OR IGNORE INTO user_profiles (user_uuid, email, password_hash, full_name, role) VALUES (?, ?, ?, ?, ?)`,
-        [adminUuid, adminEmail, hashedPassword, '系统管理员', 'admin']);
+    db.run(`INSERT OR IGNORE INTO user_profiles (user_uuid, email, password_hash, full_name, role) VALUES (?, ?, ?, ?, ?)`,
+      [adminUuid, adminEmail, hashedPassword, '系统管理员', 'admin']);
 
-      console.log('Database initialized successfully!');
-      console.log(`Default admin account: ${adminEmail} / ${adminPassword}`);
-    }
+    console.log('Database initialized successfully!');
+    console.log(`Default admin account: ${adminEmail} / ${adminPassword}`);
   });
 
   db.close();

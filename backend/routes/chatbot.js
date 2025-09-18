@@ -16,7 +16,7 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 const router = express.Router();
 
 // DeepSeek LLM API配置
-const DEEPSEEK_API_KEY = process.env.LLM_API_KEY;
+const DEEPSEEK_API_KEY = process.env.LLM_API_KEY || 'sk-603a57ae782845ea8733f914e97d3004';
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 
 // Socratic method prompts for different subjects
@@ -99,19 +99,17 @@ async function generateLLMResponse(message, image, userId, videoId) {
         contextMarkdown = `# Video Context\n\nTitle: ${videoContext.title_chinese || videoContext.title}\nDescription: ${videoContext.description || 'No description'}\nSubject: ${videoContext.subject || 'Unknown'}\nGrade: ${videoContext.grade_level || 'Unknown'}\nChapter: ${videoContext.chapter || 'Unknown'}`;
       }
     }
+    // Comment out OCR for now
     let ocrText = '';
     let ocrMarkdown = '';
-    if (image) {
-      ocrText = await extractTextFromImage(image);
-      ocrMarkdown = `# OCR Extracted Text\n\n\`\`\`\n${ocrText}\n\`\`\``;
-    }
+    // if (image) {
+    //   ocrText = await extractTextFromImage(image);
+    //   ocrMarkdown = `# OCR Extracted Text\n\n\`\`\`\n${ocrText}\n\`\`\``;
+    // }
     let systemPrompt = "你是一位使用苏格拉底式教学法的中文学习助手。引导学生通过提问来思考问题，而不是直接给出答案。";
     let userPrompt = message;
     if (contextMarkdown) {
       userPrompt += `\n${contextMarkdown}`;
-    }
-    if (ocrMarkdown) {
-      userPrompt += `\n${ocrMarkdown}`;
     }
     const response = await axios.post(DEEPSEEK_API_URL, {
       model: 'deepseek-chat',
@@ -127,7 +125,7 @@ async function generateLLMResponse(message, image, userId, videoId) {
         'Content-Type': 'application/json'
       }
     });
-    return { llmResponse: response.data.choices[0].message.content, ocrMarkdown };
+    return { llmResponse: response.data.choices[0].message.content, ocrMarkdown: '' };
   } catch (error) {
     console.error('DeepSeek API call failed:', error.response ? error.response.data : error.message);
     return { llmResponse: generateFallbackResponse(message), ocrMarkdown: '' };

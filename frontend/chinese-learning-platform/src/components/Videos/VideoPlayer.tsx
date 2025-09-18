@@ -204,30 +204,30 @@ const handleDeleteNote = (id: number) => {
 };
 
 // Handle sending message to chatbot
-  const handleSendMessage = async (message: string, image?: string) => {
-    const newMessage: ChatMessage = { role: 'user', content: message };
-    if (image) {
-      newMessage.image = image;
-    }
-    setChatMessages((prev) => [...prev, newMessage]);
-
+  const handleSendMessage = async (message: string) => {
+    // Add user message to chat
+    setChatMessages(prev => [...prev, { role: 'user', content: message }]);
     setIsChatLoading(true);
-
+    
     try {
-      const videoContext = {
-        grade: video.grade,
-        subject: video.subject,
-        topic: video.topic,
-        title: video.title,
-        currentTime: player?.getCurrentTime(),
-      };
-
-      const response = await ChatbotService.sendMessage(message, videoContext, image);
-
-      setChatMessages((prev) => [...prev, { role: 'bot', content: response.message }]);
+      // Call the chatbot API with video context
+      const response = await ChatbotService.sendMessage(message, {
+        grade: video?.grade_level || '',
+        subject: video?.subject_name_chinese || '',
+        topic: video?.topic || '',
+        title: video?.title_chinese || video?.title || '',
+        currentTime: formatTime(currentTime)
+      });
+      
+      // Add bot response to chat
+      setChatMessages(prev => [...prev, { role: 'bot', content: response.message }]);
     } catch (error) {
-      console.error('Error sending message:', error);
-      setChatMessages((prev) => [...prev, { role: 'bot', content: '抱歉，发生错误。请重试。' }]);
+      console.error('Error sending message to chatbot:', error);
+      setChatMessages(prev => [...prev, { 
+        role: 'bot', 
+        content: '抱歉，我遇到了一些问题。请稍后再试。' 
+      }]);
+      toast.error('聊天机器人服务暂时不可用');
     } finally {
       setIsChatLoading(false);
     }
