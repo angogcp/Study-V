@@ -16,7 +16,7 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 const router = express.Router();
 
 // DeepSeek LLM API配置
-const DEEPSEEK_API_KEY = process.env.LLM_API_KEY || 'sk-603a57ae782845ea8733f914e97d3004';
+const DEEPSEEK_API_KEY = process.env.LLM_API_KEY;
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 
 // Socratic method prompts for different subjects
