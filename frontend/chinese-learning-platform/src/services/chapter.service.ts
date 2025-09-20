@@ -1,5 +1,4 @@
-import api from '@/lib/api';
-import { PaginatedResponse } from '@/types';
+import { sqliteDatabase } from './sqliteDatabase';
 
 export interface Chapter {
   id: number;
@@ -16,21 +15,19 @@ export class ChapterService {
     subject_id?: number;
     grade_level?: '初中1' | '初中2' | '初中3';
   }): Promise<Chapter[]> {
-    // 确保使用正确的API路径
-    const response = await api.get<{ chapters: Chapter[] }>('/chapters', { params });
-    return response.data.chapters;
+    return await sqliteDatabase.getChapters(params || {});
   }
 
   static async createChapter(data: Partial<Chapter>): Promise<Chapter> {
-    const response = await api.post<Chapter>('/chapters', data);
-    return response.data;
+    const id = await sqliteDatabase.createChapter(data);
+    return { ...data, id } as Chapter; // Simplified, add query if needed
   }
 
   static async updateChapter(id: number, data: Partial<Chapter>): Promise<void> {
-    await api.put(`/chapters/${id}`, data);
+    await sqliteDatabase.updateChapter(id, data);
   }
 
   static async deleteChapter(id: number): Promise<void> {
-    await api.delete(`/chapters/${id}`);
+    await sqliteDatabase.deleteChapter(id);
   }
 }

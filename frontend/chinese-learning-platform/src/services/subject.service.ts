@@ -1,15 +1,13 @@
-import api from '@/lib/api';
+import { sqliteDatabase } from './sqliteDatabase';
 import { Subject, ApiResponse } from '@/types';
 
 export class SubjectService {
   static async getAllSubjects(): Promise<Subject[]> {
-    const response = await api.get<Subject[]>('/subjects');
-    return response.data;
+    return sqliteDatabase.getAllSubjects();
   }
 
   static async getSubjectById(id: number): Promise<Subject> {
-    const response = await api.get<Subject>(`/subjects/${id}`);
-    return response.data;
+    return sqliteDatabase.getSubject(id);
   }
 
   static async createSubject(subjectData: {
@@ -20,8 +18,8 @@ export class SubjectService {
     colorCode?: string;
     sortOrder?: number;
   }): Promise<Subject> {
-    const response = await api.post<ApiResponse<Subject>>('/subjects', subjectData);
-    return response.data.data!;
+    const id = await sqliteDatabase.createSubject(subjectData);
+    return { id, ...subjectData } as Subject;
   }
 
   static async updateSubject(
@@ -36,15 +34,10 @@ export class SubjectService {
       isActive: boolean;
     }>
   ): Promise<void> {
-    await api.put(`/subjects/${id}`, subjectData);
+    await sqliteDatabase.updateSubject(id, subjectData);
   }
 
   static async deleteSubject(id: number): Promise<void> {
-    await api.delete(`/subjects/${id}`);
-  }
-
-  static getSubjects = async () => {
-    const response = await api.get<Subject[]>('/subjects');
-    return response.data;
+    await sqliteDatabase.deleteSubject(id);
   }
 }

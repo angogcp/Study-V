@@ -5,40 +5,32 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
 
 // Get all chapters with optional filters
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { subject_id, grade_level } = req.query;
   
-  let query = `
-    SELECT c.*, s.name as subject_name, s.name_chinese as subject_name_chinese
-    FROM chapters c
-    JOIN subjects s ON c.subject_id = s.id
-  `;
-  let params = [];
-
-  if (subject_id) {
-    query += ` WHERE c.subject_id = ?`;
-    params.push(subject_id);
-  }
-
-  if (grade_level) {
-    query += subject_id ? ` AND c.grade_level = ?` : ` WHERE c.grade_level = ?`;
-    params.push(grade_level);
-  }
-
-  query += ` ORDER BY c.sort_order ASC`;
-
   const db = getDatabase();
-
-  db.all(query, params, (err, chapters) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    res.json({ chapters });
-  });
+  
+  let query = db.from('chapters')
+    .select('*, subjects!inner(name: subject_name, name_chinese: subject_name_chinese)');
+  
+  if (subject_id) {
+    query = query.eq('subject_id', subject_id);
+  }
+  
+  if (grade_level) {
+    query = query.eq('grade_level', grade_level);
+  }
+  
+  const { data: chapters, error } = await query.order('sort_order', { ascending: true });
+  
+  if (error) {
+    return res.status(500).json({ error: 'Database error' });
+  }
+  res.json({ chapters });
 });
 
 // Create new chapter (admin only)
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { subject_id, grade_level, name, sort_order } = req.body;
   console.log('Received chapter data:', { subject_id, grade_level, name, sort_order });
 
@@ -48,71 +40,67 @@ router.post('/', (req, res) => {
 
   const db = getDatabase();
 
-  db.run(
-    `INSERT INTO chapters (subject_id, grade_level, name, sort_order) VALUES (?, ?, ?, ?)` ,
-    [subject_id, grade_level, name, sort_order || 0],
-    function(err) {
-      if (err) {
-        console.error('Database error creating chapter:', err);
-        return res.status(500).json({ error: 'Failed to create chapter' });
-      }
+  const { data, error } = await db.from('chapters')
+    .insert({ subject_id, grade_level, name, sort_order: sort_order || 0 })
+    .select();
 
-      res.json({
-        id: this.lastID,
-        message: 'Chapter created successfully'
-      });
-    }
-  );
+  if (error) {
+    console.error('Database error creating chapter:', error);
+    return res.status(500).json({ error: 'Failed to create chapter' });
+  }
+
+  res.json({
+    id: data[0].id,
+    message: 'Chapter created successfully'
+  });
 });
 
 // Update chapter (admin only)
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   const { subject_id, grade_level, name, sort_order } = req.body;
   const chapterId = req.params.id;
 
+  const updateData = {};
+  if (subject_id !== undefined) updateData.subject_id = subject_id;
+  if (grade_level !== undefined) updateData.grade_level = grade_level;
+  if (name !== undefined) updateData.name = name;
+  if (sort_order !== undefined) updateData.sort_order = sort_order;
+
   const db = getDatabase();
 
-  db.run(
-    `UPDATE chapters SET 
-     subject_id = COALESCE(?, subject_id),
-     grade_level = COALESCE(?, grade_level),
-     name = COALESCE(?, name),
-     sort_order = COALESCE(?, sort_order)
-     WHERE id = ?` ,
-    [subject_id, grade_level, name, sort_order, chapterId],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to update chapter' });
-      }
+  const { data, count, error } = await db.from('chapters')
+    .update(updateData, { count: 'exact' })
+    .eq('id', chapterId)
+    .select();
 
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Chapter not found' });
-      }
+  if (error) {
+    return res.status(500).json({ error: 'Failed to update chapter' });
+  }
 
-      res.json({ message: 'Chapter updated successfully' });
-    }
-  );
+  if (count === 0) {
+    return res.status(404).json({ error: 'Chapter not found' });
+  }
+
+  res.json({ message: 'Chapter updated successfully' });
 });
 
 // Delete chapter (admin only)
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   const db = getDatabase();
 
-  db.run(
-    `DELETE FROM chapters WHERE id = ?` ,
-    [req.params.id],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to delete chapter' });
-      }
+  const { count, error } = await db.from('chapters')
+    .delete({ count: 'exact' })
+    .eq('id', req.params.id);
 
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Chapter not found' });
-      }
+  if (error) {
+    return res.status(500).json({ error: 'Failed to delete chapter' });
+  }
 
-      res.json({ message: 'Chapter deleted successfully' });
-    }
-  );
+  if (count === 0) {
+    return res.status(404).json({ error: 'Chapter not found' });
+  }
+
+  res.json({ message: 'Chapter deleted successfully' });
 });
 
 module.exports = router;

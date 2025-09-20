@@ -3,7 +3,18 @@
   "buildCommand": "pnpm run build:prod",
   "outputDirectory": "dist",
   "installCommand": "pnpm install",
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+  "routes": [
+    {
+      "src": "/learning_platform.db",
+      "dest": "/learning_platform.db",
+      "headers": {
+        "content-type": "application/octet-stream",
+        "cache-control": "public, max-age=3600"
+      }
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
   ]
 }

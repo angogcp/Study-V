@@ -48,3 +48,7 @@ export default tseslint.config({
   },
 })
 ```
+
+## Setting Up DeepSeek API Key
+
+To use the chatbot functionality in this application, you need a DeepSeek API key. Here's how to obtain and set it up:\n\n### Obtaining a DeepSeek API Key\n1. Visit the [DeepSeek website](https://www.deepseek.com/) and sign up for an account if you don't have one.\n2. Navigate to the API section in your dashboard.\n3. Generate a new API key. Make sure to copy it securely, as it won't be shown again.\n\n**Note:** Keep your API key private and do not commit it to version control or share it publicly, as it could lead to unauthorized usage and costs.\n\n### Setting Up the API Key in the App\n1. Run the application locally using `npm run dev` or access the deployed version.\n2. Navigate to the Chatbot page or any component that uses the chatbot (e.g., Video Player with chat).\n3. If the API key is not set, a prompt will appear asking you to enter your DeepSeek API key.\n4. Enter the key and submit. It will be stored securely in your browser's localStorage.\n5. The chatbot should now function properly, making direct calls to the DeepSeek API.\n\nIf you need to update or remove the key, you can do so via the browser's developer tools or by clearing localStorage, but you'll be prompted again on next use.\n\nFor any issues, check the browser console for error messages related to API calls.

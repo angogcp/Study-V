@@ -1,18 +1,26 @@
-import api from '@/lib/api';
+import { sqliteDatabase } from './sqliteDatabase';
 
 export class AuthService {
   static async login(email: string, password: string) {
-    const response = await api.post('/auth/login', { email, password });
-    return response.data;
+    const { user } = await sqliteDatabase.login(email, password);
+    localStorage.setItem('currentUser', JSON.stringify(user));
+    return { user };
   }
 
   static async register(email: string, password: string, fullName: string, gradeLevel: string) {
-    const response = await api.post('/auth/register', { email, password, full_name: fullName, grade_level: gradeLevel });
-    return response.data;
+    const userId = await sqliteDatabase.registerUser(email, password, fullName, gradeLevel);
+    const user = await sqliteDatabase.getProfile(userId);
+    localStorage.setItem('currentUser', JSON.stringify(user));
+    return { user };
   }
 
   static async getProfile() {
-    const response = await api.get('/auth/profile');
-    return response.data;
+    const userStr = localStorage.getItem('currentUser');
+    if (!userStr) throw new Error('Not logged in');
+    return JSON.parse(userStr);
+  }
+
+  static logout() {
+    localStorage.removeItem('currentUser');
   }
 }

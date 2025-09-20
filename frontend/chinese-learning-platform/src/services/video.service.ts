@@ -1,5 +1,5 @@
-import api from '@/lib/api';
-import { Video, PaginatedResponse, ApiResponse } from '@/types';
+import { sqliteDatabase } from './sqliteDatabase';
+import { Video, PaginatedResponse } from '@/types';
 
 export class VideoService {
   static async getAllVideos(params?: {
@@ -10,15 +10,12 @@ export class VideoService {
     page?: number;
     limit?: number;
   }): Promise<PaginatedResponse<Video> & { videos: Video[] }> {
-    const response = await api.get<PaginatedResponse<Video> & { videos: Video[] }>('/videos', {
-      params,
-    });
-    return response.data;
+    const result = await sqliteDatabase.getAllVideos(params || {});
+    return { videos: result.videos, total: result.total };
   }
 
   static async getVideoById(id: number): Promise<Video> {
-    const response = await api.get<Video>(`/videos/${id}`);
-    return response.data;
+    return await sqliteDatabase.getVideo(id);
   }
 
   static async createVideo(videoData: {
@@ -33,30 +30,30 @@ export class VideoService {
     difficultyLevel?: 'easy' | 'medium' | 'hard';
     sortOrder?: number;
   }): Promise<{ id: number }> {
-    const response = await api.post<ApiResponse<{ id: number }>>('/videos', videoData);
-    return response.data.data!;
+    const mappedData = {
+      title: videoData.title,
+      title_chinese: videoData.titleChinese,
+      description: videoData.description,
+      youtube_url: videoData.youtubeUrl,
+      subject_id: videoData.subjectId,
+      grade_level: videoData.gradeLevel,
+      chapter: videoData.chapter,
+      topic: videoData.topic,
+      difficulty_level: videoData.difficultyLevel,
+      sort_order: videoData.sortOrder,
+    };
+    const id = await sqliteDatabase.createVideo(mappedData);
+    return { id };
   }
 
   static async updateVideo(
     id: number,
-    videoData: Partial<{
-      title: string;
-      titleChinese: string;
-      description: string;
-      youtubeUrl: string;
-      subjectId: number;
-      gradeLevel: '初中1' | '初中2' | '初中3';
-      chapter: string;
-      topic: string;
-      difficultyLevel: 'easy' | 'medium' | 'hard';
-      sortOrder: number;
-      isActive: boolean;
-    }>
+    videoData: Partial<Video>
   ): Promise<void> {
-    await api.put(`/videos/${id}`, videoData);
+    await sqliteDatabase.updateVideo(id, videoData);
   }
 
   static async deleteVideo(id: number): Promise<void> {
-    await api.delete(`/videos/${id}`);
+    await sqliteDatabase.deleteVideo(id);
   }
 }

@@ -1,10 +1,10 @@
-import api from '@/lib/api';
+import { sqliteDatabase } from './sqliteDatabase';
 import { VideoProgress, LearningStats, PaginatedResponse } from '@/types';
 
 export class ProgressService {
   static async getVideoProgress(videoId: number): Promise<VideoProgress> {
-    const response = await api.get<VideoProgress>(`/progress/video/${videoId}`);
-    return response.data;
+    const userId = this.getUserId();
+    return sqliteDatabase.getVideoProgress(videoId, userId);
   }
 
   static async getAllProgress(params?: {
@@ -13,11 +13,9 @@ export class ProgressService {
     grade_level?: '初中1' | '初中2' | '初中3';
     page?: number;
     limit?: number;
-  }): Promise<PaginatedResponse<VideoProgress> & { progress: VideoProgress[] }> {
-    const response = await api.get<PaginatedResponse<VideoProgress> & { progress: VideoProgress[] }>('/progress', {
-      params,
-    });
-    return response.data;
+  }): Promise<{ progress: VideoProgress[], total: number }> {
+    const userId = this.getUserId();
+    return sqliteDatabase.getAllProgress(userId, params);
   }
 
   static async updateProgress(progressData: {
@@ -27,11 +25,24 @@ export class ProgressService {
     lastPosition?: number;
     bookmarkNotes?: string;
   }): Promise<void> {
-    await api.post('/progress/update', progressData);
+    const userId = this.getUserId();
+    const completed = progressData.totalDuration ? progressData.watchTimeSeconds >= progressData.totalDuration * 0.9 : false;
+    await sqliteDatabase.updateProgress({
+      userId,
+      videoId: progressData.videoId,
+      watchTime: progressData.watchTimeSeconds,
+      completed
+    });
   }
 
   static async getLearningStats(): Promise<LearningStats> {
-    const response = await api.get<LearningStats>('/progress/stats');
-    return response.data;
+    const userId = this.getUserId();
+    return sqliteDatabase.getLearningStats(userId);
+  }
+
+  private static getUserId(): number {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    if (!user.id) throw new Error('User not logged in');
+    return user.id;
   }
 }

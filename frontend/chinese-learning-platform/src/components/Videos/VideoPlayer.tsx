@@ -204,19 +204,26 @@ const handleDeleteNote = (id: number) => {
 };
 
 // Handle sending message to chatbot
+  // Remove handleCaptureScreenshot function entirely
+  
+  // Update handleSendMessage to use new sendMessage signature
   const handleSendMessage = async (message: string) => {
     // Add user message to chat
     setChatMessages(prev => [...prev, { role: 'user', content: message }]);
     setIsChatLoading(true);
     
     try {
-      // Call the chatbot API with video context
-      const response = await ChatbotService.sendMessage(message, {
-        grade: video?.grade_level || '',
-        subject: video?.subject_name_chinese || '',
-        topic: video?.topic || '',
-        title: video?.title_chinese || video?.title || '',
-        currentTime: formatTime(currentTime)
+      // Call the chatbot API with video context and chat history
+      const response = await ChatbotService.sendMessage({
+        message,
+        videoContext: {
+          grade: video?.grade_level || '',
+          subject: video?.subject_name_chinese || '',
+          topic: video?.topic || '',
+          title: video?.title_chinese || video?.title || '',
+          currentTime: formatTime(currentTime)
+        },
+        context: chatMessages
       });
       
       // Add bot response to chat
@@ -293,7 +300,7 @@ const stopProgressTracking = useCallback(() => {
   
   // Final progress update when stopping
   if (youtubePlayerRef.current) {
-    updateProgress(youtubePlayerRef.current.getCurrentTime());
+    updateProgress(youtubePlayerRef.current.getDuration());
   }
 }, [youtubePlayerRef, updateProgress]);
 
@@ -392,86 +399,6 @@ useEffect(() => {
     );
   }
 
-const handleCaptureScreenshot = async () => {
-  if (!player || !video?.youtube_id) {
-    toast.error('视频播放器未准备就绪');
-    return;
-  }
-
-  try {
-    // 调用后端API捕获截图
-    const { image } = await ChatbotService.captureScreenshot(video.youtube_id, currentTime);
-
-    // 创建图像元素
-    const img = new Image();
-    img.src = image;
-    await new Promise((resolve) => {
-      img.onload = resolve;
-    });
-
-    // 创建canvas添加信息覆盖层
-    const canvas = document.createElement('canvas');
-    canvas.width = img.width;
-    canvas.height = img.height + 60;
-    const ctx = canvas.getContext('2d');
-
-    if (!ctx) {
-      throw new Error('无法创建canvas上下文');
-    }
-
-    // 绘制图像
-    ctx.drawImage(img, 0, 0);
-
-    // 添加信息栏
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(0, img.height, canvas.width, 60);
-
-    ctx.fillStyle = '#fff';
-    ctx.font = '14px Arial';
-    ctx.textAlign = 'left';
-
-    // 标题
-    const title = video.title_chinese || video.title;
-    let displayTitle = title;
-    const maxTitleWidth = canvas.width - 200;
-    if (ctx.measureText(title).width > maxTitleWidth) {
-      for (let i = title.length; i > 0; i--) {
-        const testTitle = title.substring(0, i) + '...';
-        if (ctx.measureText(testTitle).width <= maxTitleWidth) {
-          displayTitle = testTitle;
-          break;
-        }
-      }
-    }
-    ctx.fillText(displayTitle, 10, img.height + 20);
-
-    // 时间
-    ctx.fillText(`时间: ${formatTime(currentTime)} / ${formatTime(duration)}`, 10, img.height + 40);
-
-    // 进度
-    ctx.textAlign = 'right';
-    ctx.fillText(`进度: ${Math.round(progressPercentage)}%`, canvas.width - 10, img.height + 20);
-
-    // 截图时间
-    const now = new Date();
-    ctx.fillText(`截图时间: ${now.toLocaleString('zh-CN')}`, canvas.width - 10, img.height + 40);
-
-    const finalImage = canvas.toDataURL('image/png');
-
-    // 添加到聊天
-    setChatMessages(prev => [...prev, {
-      role: 'user',
-      content: `在 ${formatTime(currentTime)} 处截取的视频画面`,
-      image: finalImage
-    }]);
-    
-    toast.success('视频截图已添加到聊天中!');
-  } catch (error) {
-    console.error('截图失败:', error);
-    toast.error('截图失败，请重试');
-  }
-};
-
   return (
     <motion.div 
       initial={{ opacity: 0 }}
@@ -534,10 +461,7 @@ const handleCaptureScreenshot = async () => {
 
             {/* Video Controls */}
             <div className="flex gap-2 pt-2">
-              <Button onClick={handleCaptureScreenshot} size="sm" variant="outline">
-                <Camera className="mr-1 h-4 w-4" />
-                Capture Screenshot
-              </Button>
+              {/* Screenshot button removed due to client-side migration limitations */}
             </div>
           </div>
           

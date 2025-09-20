@@ -1,5 +1,4 @@
-import api from '@/lib/api';
-import { UserNote, PaginatedResponse, ApiResponse } from '@/types';
+import { sqliteDatabase } from './sqliteDatabase';
 
 export class NotesService {
   static async getAllNotes(params?: {
@@ -7,21 +6,19 @@ export class NotesService {
     search?: string;
     page?: number;
     limit?: number;
-  }): Promise<PaginatedResponse<UserNote> & { notes: UserNote[] }> {
-    const response = await api.get<PaginatedResponse<UserNote> & { notes: UserNote[] }>('/notes', {
-      params,
-    });
-    return response.data;
+  }): Promise<{ notes: UserNote[], total: number }> {
+    const userId = this.getUserId();
+    return sqliteDatabase.getAllNotes(userId, params);
   }
 
   static async getVideoNotes(videoId: number): Promise<UserNote[]> {
-    const response = await api.get<UserNote[]>(`/notes/video/${videoId}`);
-    return response.data;
+    const userId = this.getUserId();
+    return sqliteDatabase.getVideoNotes(videoId, userId);
   }
 
   static async getNoteById(id: number): Promise<UserNote> {
-    const response = await api.get<UserNote>(`/notes/${id}`);
-    return response.data;
+    const userId = this.getUserId();
+    return sqliteDatabase.getNoteById(id, userId);
   }
 
   static async createNote(noteData: {
@@ -33,8 +30,18 @@ export class NotesService {
     isPrivate?: boolean;
     tags?: string[];
   }): Promise<{ id: number }> {
-    const response = await api.post<ApiResponse<{ id: number }>>('/notes', noteData);
-    return response.data.data!;
+    const userId = this.getUserId();
+    const id = await sqliteDatabase.createNote({
+      userId,
+      videoId: noteData.videoId,
+      title: noteData.title,
+      content: noteData.content,
+      contentHtml: noteData.contentHtml,
+      timestampSeconds: noteData.timestampSeconds,
+      isPrivate: noteData.isPrivate,
+      tags: noteData.tags ? noteData.tags.join(',') : ''
+    });
+    return { id };
   }
 
   static async updateNote(
@@ -48,22 +55,27 @@ export class NotesService {
       tags: string[];
     }>
   ): Promise<void> {
-    await api.put(`/notes/${id}`, noteData);
+    const userId = this.getUserId();
+    await sqliteDatabase.updateNote(id, userId, {
+      ...noteData,
+      tags: noteData.tags ? noteData.tags.join(',') : undefined
+    });
   }
 
   static async deleteNote(id: number): Promise<void> {
-    await api.delete(`/notes/${id}`);
+    const userId = this.getUserId();
+    await sqliteDatabase.deleteNote(id, userId);
   }
 
+  // For exports, implement client-side generation
   static async exportNotesPDF(params: {
     noteIds?: number[];
     videoId?: number;
     format?: 'detailed' | 'summary';
   }): Promise<Blob> {
-    const response = await api.post('/notes/export/pdf', params, {
-      responseType: 'blob',
-    });
-    return response.data;
+    // TODO: Implement PDF generation using jsPDF or similar
+    const text = 'PDF export not implemented yet';
+    return new Blob([text], { type: 'application/pdf' });
   }
 
   static async exportNotesMarkdown(params: {
@@ -71,9 +83,26 @@ export class NotesService {
     videoId?: number;
     format?: 'detailed' | 'summary';
   }): Promise<Blob> {
-    const response = await api.post('/notes/export/markdown', params, {
-      responseType: 'blob',
+    const userId = this.getUserId();
+    let notes;
+    if (params.noteIds) {
+      // Get specific notes
+      notes = await Promise.all(params.noteIds.map(id => this.getNoteById(id)));
+    } else if (params.videoId) {
+      notes = await this.getVideoNotes(params.videoId);
+    } else {
+      notes = (await this.getAllNotes()).notes;
+    }
+    let markdown = '';
+    notes.forEach(note => {
+      markdown += `# ${note.title || 'Note'}\n\n${note.content}\n\n`;
     });
-    return response.data;
+    return new Blob([markdown], { type: 'text/markdown' });
+  }
+
+  private static getUserId(): number {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    if (!user.id) throw new Error('User not logged in');
+    return user.id;
   }
 }
