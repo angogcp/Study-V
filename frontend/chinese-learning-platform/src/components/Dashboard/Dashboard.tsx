@@ -95,7 +95,7 @@ const Dashboard: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {user ? formatWatchTime(user.totalWatchTime) : '0分钟'}
+              {user ? formatWatchTime(user.totalWatchTime ?? 0) : '0分钟'}
             </div>
             <p className="text-xs text-muted-foreground">
               累计学习时长
