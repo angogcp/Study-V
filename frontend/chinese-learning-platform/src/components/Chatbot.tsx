@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Upload } from 'lucide-react';
+import { Send, Upload, Paperclip } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -23,29 +23,17 @@ interface ChatbotProps {
 const Chatbot: React.FC<ChatbotProps> = ({ messages, onSendMessage, isLoading, className }) => {
   const [inputValue, setInputValue] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Check if API key exists on component mount
-  useEffect(() => {
-    const apiKey = localStorage.getItem('deepseekApiKey');
-    setShowApiKeyInput(!apiKey);
-  }, []);
+  // Remove API key check and related states
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSaveApiKey = () => {
-    if (apiKeyInput.trim()) {
-      localStorage.setItem('deepseekApiKey', apiKeyInput.trim());
-      setShowApiKeyInput(false);
-      setApiKeyInput('');
-    }
-  };
+  // Remove handleSaveApiKey
 
   const handleSendMessage = async () => {
     if (isLoading) return;
@@ -74,122 +62,60 @@ const Chatbot: React.FC<ChatbotProps> = ({ messages, onSendMessage, isLoading, c
 
   return (
     <div className={cn("flex flex-col h-[600px] border rounded-lg overflow-hidden", className)}>
-      {showApiKeyInput ? (
-        <div className="flex-1 p-4 flex flex-col items-center justify-center space-y-4">
-          <p className="text-center text-sm text-gray-600">
-            请输入您的DeepSeek API密钥以启用聊天功能。
-            <br />
-            您可以从 <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">DeepSeek平台</a> 获取API密钥。
-          </p>
-          <div className="w-full max-w-md space-y-2">
-            <Input
-              type="password"
-              placeholder="输入DeepSeek API密钥"
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              className="w-full"
-            />
-            <Button 
-              onClick={handleSaveApiKey} 
-              disabled={!apiKeyInput.trim()}
-              className="w-full"
-            >
-              保存密钥
-            </Button>
+      {/* Remove showApiKeyInput conditional */}
+      <>
+        <ScrollArea className="flex-1 p-4">
+          <div className="space-y-4">
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={cn(
+                  "flex items-start gap-3 max-w-[80%]",
+                  message.role === 'user' ? 'ml-auto' : ''
+                )}
+              >
+                <div className={cn(
+                  "p-3 rounded-lg",
+                  message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-100'
+                )}>
+                  {message.content}
+                  {message.image && (
+                    <img src={message.image} alt="Uploaded" className="mt-2 max-w-[200px] rounded" />
+                  )}
+                </div>
+              </div>
+            ))}
+            {isLoading && (
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-lg bg-gray-100">思考中...</div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
+        </ScrollArea>
+        <div className="p-4 border-t flex items-center gap-2">
+          <Input
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="输入您的消息..."
+            className="flex-1"
+          />
+          <input
+            type="file"
+            accept="image/*"
+            ref={fileInputRef}
+            className="hidden"
+            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+          />
+          <Button variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()}>
+            <Paperclip className="h-4 w-4" />
+          </Button>
+          <Button onClick={handleSendMessage} disabled={isLoading || (!inputValue.trim() && !selectedFile)}>
+            发送
+          </Button>
         </div>
-      ) : (
-        <>
-          <ScrollArea className="flex-1 p-4">
-            <div className="space-y-4">
-              {messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={cn(
-                    "flex items-start gap-3 max-w-[80%]",
-                    message.role === 'user' ? "ml-auto" : ""
-                  )}
-                >
-                  {message.role === 'bot' && (
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="bg-blue-100 text-blue-600">AI</AvatarFallback>
-                    </Avatar>
-                  )}
-                  <div
-                    className={cn(
-                      "rounded-lg p-3",
-                      message.role === 'user'
-                        ? "bg-primary text-white"
-                        : "bg-muted"
-                    )}
-                  >
-                    {message.image && <img src={message.image} alt="Screenshot" className="max-w-full rounded mb-2" />}
-                    {message.role === 'bot' ? (
-                      <div className="whitespace-pre-wrap prose prose-sm max-w-none">
-                        <ReactMarkdown>{message.content}</ReactMarkdown>
-                      </div>
-                    ) : (
-                      <p className="whitespace-pre-wrap">{message.content}</p>
-                    )}
-                  </div>
-                  {message.role === 'user' && (
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="bg-green-100 text-green-600">U</AvatarFallback>
-                    </Avatar>
-                  )}
-                </div>
-              ))}
-              {isLoading && (
-                <div className="flex items-start gap-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback className="bg-blue-100 text-blue-600">AI</AvatarFallback>
-                  </Avatar>
-                  <div className="rounded-lg p-3 bg-muted">
-                    <div className="flex space-x-2">
-                      <div className="h-2 w-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                      <div className="h-2 w-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                      <div className="h-2 w-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-          </ScrollArea>
-          <div className="border-t p-4 flex gap-2">
-            <Input
-              placeholder="输入您的问题..."
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isLoading}
-              className="flex-1"
-            />
-            <Button 
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isLoading}
-              size="icon"
-              variant="outline"
-            >
-              <Upload className="h-4 w-4" />
-            </Button>
-            <input
-              type="file"
-              accept="image/*"
-              ref={fileInputRef}
-              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-              className="hidden"
-            />
-            <Button 
-              onClick={handleSendMessage} 
-              disabled={isLoading || (!inputValue.trim() && !selectedFile)}
-              size="icon"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          </div>
-        </>
-      )}
+      </>
     </div>
   );
 };

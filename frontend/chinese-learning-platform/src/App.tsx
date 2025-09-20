@@ -19,6 +19,7 @@ import api from '@/lib/api';
 import SubjectManagement from '@/components/Admin/SubjectManagement';
 import ChapterManagement from '@/components/Admin/ChapterManagement';
 import ChatbotPage from '@/pages/ChatbotPage';
+import { ProtectedRoute, AdminRoute } from '@/components/ProtectedRoute';
 
 const defaultQueryFn = async ({ queryKey }) => {
   // 处理数组形式的queryKey
@@ -64,21 +65,30 @@ const queryClient = new QueryClient({
 const AppRoutesWithAuth: React.FC = () => {
   return (
     <Routes>
-      {/* Main Routes */}
-      <Route path="/" element={<Layout />}>
-        <Route index element={<Dashboard />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="videos" element={<VideoList />} />
-        <Route path="videos/:id" element={<VideoPlayer />} />
-        <Route path="progress" element={<LearningProgress />} />
-        <Route path="notes" element={<MyNotes />} />
-        <Route path="chatbot" element={<ChatbotPage />} />
-        <Route path="settings" element={<div className="p-8 text-center text-gray-500">设置页面开发中...</div>} />
-        {/* Admin Routes */}
-        <Route path="admin/user" element={<UserManagement />} />
-        <Route path="admin/videos" element={<VideoManagement />} />
-        <Route path="admin/subjects" element={<SubjectManagement />} />
-        <Route path="admin/chapters" element={<ChapterManagement />} />
+      {/* Auth Routes */}
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      
+      {/* Protected Routes */}
+      <Route element={<ProtectedRoute />}>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="videos" element={<VideoList />} />
+          <Route path="videos/:id" element={<VideoPlayer />} />
+          <Route path="progress" element={<LearningProgress />} />
+          <Route path="notes" element={<MyNotes />} />
+          <Route path="chatbot" element={<ChatbotPage />} />
+          <Route path="settings" element={<div className="p-8 text-center text-gray-500">设置页面开发中...</div>} />
+          
+          {/* Admin Routes */}
+          <Route element={<AdminRoute />}>
+            <Route path="admin/user" element={<UserManagement />} />
+            <Route path="admin/videos" element={<VideoManagement />} />
+            <Route path="admin/subjects" element={<SubjectManagement />} />
+            <Route path="admin/chapters" element={<ChapterManagement />} />
+          </Route>
+        </Route>
       </Route>
       
       {/* Fallback */}

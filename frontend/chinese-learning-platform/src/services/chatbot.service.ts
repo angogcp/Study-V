@@ -1,6 +1,7 @@
 // Remove import api
 // Add import axios
 import axios from 'axios';
+import api from '../lib/api'; // Assuming this is the authenticated axios instance
 
 interface ChatMessage {
   role: 'user' | 'bot';
@@ -95,40 +96,22 @@ export class ChatbotService {
 
   static async sendMessage(options: { message: string; videoContext?: VideoContext; context?: ChatMessage[] }): Promise<ChatResponse> {
     const { message, videoContext, context = [] } = options;
-    const key = localStorage.getItem('deepseekApiKey') || '';
-
-    if (!key) {
-      return { message: this.generateFallbackResponse(message) };
-    }
-
-    let userMessage = message;
-    if (videoContext) {
-      userMessage = `Video context: ${JSON.stringify(videoContext)}\nUser message: ${message}`;
-    }
 
     const systemPrompt = `You are a helpful learning assistant that uses the Socratic method to guide students in their thinking. Respond in Chinese. Encourage critical thinking by asking questions rather than giving direct answers. Keep responses concise but thought-provoking.`;
 
     const apiMessages = [
       { role: 'system', content: systemPrompt },
       ...context.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
-      { role: 'user', content: userMessage }
+      { role: 'user', content: message }
     ];
 
-    try {
-      const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-        model: 'deepseek-chat',
-        messages: apiMessages,
-        temperature: 0.7,
-        max_tokens: 500,
-        stream: false
-      }, {
-        headers: {
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json'
-        }
-      });
+    if (videoContext) {
+      apiMessages[apiMessages.length - 1].content += `\nVideo context: ${JSON.stringify(videoContext)}`;
+    }
 
-      const botMessage = response.data.choices[0].message.content.trim();
+    try {
+      const response = await api.post('/chatbot/message', { messages: apiMessages });
+      const botMessage = response.data.message.trim();
       return { message: botMessage };
     } catch (error) {
       console.error('API error:', error);

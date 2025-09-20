@@ -1,14 +1,20 @@
-const { createClient } = require('@supabase/supabase-js');
-require('dotenv').config();
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const dbPath = path.join(__dirname, '..', 'learning_platform.db');
 
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error('Missing Supabase URL or Anon Key in environment variables');
-}
+let db = null;
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+const getDatabase = () => {
+  if (!db) {
+    db = new sqlite3.Database(dbPath, (err) => {
+      if (err) {
+        console.error('Error opening database:', err.message);
+        throw err;
+      }
+    });
+  }
+  return db;
+};
 
-// Export as getDatabase for compatibility
-module.exports = { getDatabase: () => supabase };
+module.exports = { getDatabase };

@@ -1,26 +1,42 @@
-import { sqliteDatabase } from './sqliteDatabase';
-
+import api from '@/lib/api';
 export class AuthService {
   static async login(email: string, password: string) {
-    const { user } = await sqliteDatabase.login(email, password);
-    localStorage.setItem('currentUser', JSON.stringify(user));
-    return { user };
+    const response = await fetch('http://localhost:5000/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Login failed');
+    }
+    
+    const { user, token } = await response.json();
+    return { user, token };
   }
 
   static async register(email: string, password: string, fullName: string, gradeLevel: string) {
-    const userId = await sqliteDatabase.registerUser(email, password, fullName, gradeLevel);
-    const user = await sqliteDatabase.getProfile(userId);
-    localStorage.setItem('currentUser', JSON.stringify(user));
-    return { user };
+    const response = await fetch('http://localhost:5000/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, full_name: fullName, grade_level: gradeLevel })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Registration failed');
+    }
+    
+    const { user, token } = await response.json();
+    return { user, token };
   }
 
   static async getProfile() {
-    const userStr = localStorage.getItem('currentUser');
-    if (!userStr) throw new Error('Not logged in');
-    return JSON.parse(userStr);
+    const response = await api.get('/auth/profile');
+    return response.data;
   }
 
   static logout() {
-    localStorage.removeItem('currentUser');
   }
 }

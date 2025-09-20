@@ -14,6 +14,7 @@ const chapterRoutes = require('./routes/chapters');
 const chatbotRoutes = require('./routes/chatbot');
 const testRoutes = require('./routes/test');
 const authRoutes = require('./routes/auth');
+const userRoutes = require('./routes/users');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -87,6 +88,7 @@ app.use('/api/chapters', chapterRoutes);
 app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/test', testRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 
 
 

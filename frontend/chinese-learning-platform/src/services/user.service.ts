@@ -1,24 +1,49 @@
-import { sqliteDatabase } from './sqliteDatabase';
 import { User } from '@/types';
+import api from '@/lib/api';
 
 export class UserService {
-  private getUserId(): number {
-    return parseInt(localStorage.getItem('userId') || '0', 10);
+  static async getAllUsers(params: { search?: string; page?: number; limit?: number } = {}): Promise<{ users: User[], totalCount: number, totalPages: number }> {
+    try {
+      const response = await api.get('/users', {
+        params: {
+          search: params.search || '',
+          page: params.page || 1,
+          limit: params.limit || 10
+        }
+      });
+      const data = response.data;
+      return {
+        users: data.users || [],
+        totalCount: data.totalCount || 0,
+        totalPages: data.totalPages || 1
+      };
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      return { users: [], totalCount: 0, totalPages: 1 };
+    }
   }
 
-  async getAllUsers(params: { search?: string; page?: number; limit?: number } = {}): Promise<{ users: User[], total: number }> {
-    return await sqliteDatabase.getAllUsers(params);
+  static async getUserById(id: number): Promise<User> {
+    const response = await api.get(`/users/${id}`);
+    return response.data;
   }
 
-  async getUserById(id: number): Promise<User> {
-    return await sqliteDatabase.getUser(id);
+  static async updateUser(id: number, data: Partial<User>): Promise<void> {
+    await api.put(`/users/${id}`, data);
   }
 
-  async updateUser(id: number, data: Partial<User>): Promise<void> {
-    await sqliteDatabase.updateUser(id, data);
+  static async deleteUser(id: number): Promise<void> {
+    await api.delete(`/users/${id}`);
   }
 
-  async deleteUser(id: number): Promise<void> {
-    await sqliteDatabase.deleteUser(id);
+  static async createUser(userData: {
+    email: string;
+    password: string;
+    fullName: string;
+    gradeLevel: string;
+    role: string;
+  }): Promise<User> {
+    const response = await api.post('/users', userData);
+    return response.data;
   }
 }
