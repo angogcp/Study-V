@@ -3,14 +3,39 @@ const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs');
 const { getDatabase } = require('../database/connection');
-const { authenticateToken } = require('../middleware/auth');
-
 const router = express.Router();
 
+// Add middleware to handle guest user for routes that require authentication
+router.use((req, res, next) => {
+  // If no user is authenticated, create a guest user
+  if (!req.user) {
+    req.user = {
+      id: 'guest-user',
+      email: 'guest@example.com',
+      full_name: 'Guest User',
+      role: 'student',
+      grade_level: '初中1'
+    };
+  }
+  next();
+});
+
 // Get all notes for a user with optional filters
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', (req, res) => {
   const { video_id, search, page = 1, limit = 20 } = req.query;
   const offset = (page - 1) * limit;
+  
+  if (req.user.role === 'guest') {
+    return res.json({
+      notes: [],
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: 0,
+        pages: 0
+      }
+    });
+  }
   
   let query = `
     SELECT n.*, v.title as video_title, v.title_chinese as video_title_chinese,
@@ -74,12 +99,10 @@ router.get('/', authenticateToken, (req, res) => {
       });
     });
   });
-
-  db.close();
 });
 
 // Get notes for a specific video
-router.get('/video/:videoId', authenticateToken, (req, res) => {
+router.get('/video/:videoId', (req, res) => {
   const db = getDatabase();
   
   db.all(
@@ -97,12 +120,10 @@ router.get('/video/:videoId', authenticateToken, (req, res) => {
       res.json(notes);
     }
   );
-  
-  db.close();
 });
 
 // Get single note by ID
-router.get('/:id', authenticateToken, (req, res) => {
+router.get('/:id', (req, res) => {
   const db = getDatabase();
   
   db.get(
@@ -125,12 +146,10 @@ router.get('/:id', authenticateToken, (req, res) => {
       res.json(note);
     }
   );
-  
-  db.close();
 });
 
 // Create new note
-router.post('/', authenticateToken, (req, res) => {
+router.post('/', (req, res) => {
   const {
     videoId,
     title = 'Untitled Note',
@@ -176,12 +195,10 @@ router.post('/', authenticateToken, (req, res) => {
       });
     }
   );
-
-  db.close();
 });
 
 // Update note
-router.put('/:id', authenticateToken, (req, res) => {
+router.put('/:id', (req, res) => {
   const {
     title,
     content,
@@ -226,12 +243,10 @@ router.put('/:id', authenticateToken, (req, res) => {
       res.json({ message: 'Note updated successfully' });
     }
   );
-
-  db.close();
 });
 
 // Delete note
-router.delete('/:id', authenticateToken, (req, res) => {
+router.delete('/:id', (req, res) => {
   const db = getDatabase();
 
   db.run(
@@ -252,12 +267,14 @@ router.delete('/:id', authenticateToken, (req, res) => {
       res.json({ message: 'Note deleted successfully' });
     }
   );
-
-  db.close();
 });
 
 // Export notes to PDF
-router.post('/export/pdf', authenticateToken, async (req, res) => {
+router.post('/export/pdf', async (req, res) => {
+  if (req.user.role === 'guest') {
+    return res.status(403).json({ message: 'Guest users cannot export notes' });
+  }
+  
   const { noteIds, videoId, format = 'detailed' } = req.body;
 
   try {
@@ -309,8 +326,6 @@ router.post('/export/pdf', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Failed to generate PDF' });
       }
     });
-
-    db.close();
   } catch (error) {
     console.error('Export error:', error);
     res.status(500).json({ error: 'Export failed' });
@@ -430,8 +445,6 @@ function updateUserNotesCount(userId) {
       }
     }
   );
-  
-  db.close();
 }
 
 module.exports = router;

@@ -5,20 +5,19 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
+const { getDatabase } = require('./connection');
+
 // Use environment variable if available, otherwise use default path
 const dbPath = process.env.DB_PATH 
   ? process.env.DB_PATH 
   : path.join(__dirname, '..', 'learning_platform.db');
 
 // For Vercel serverless environment, use in-memory database
-const isVercel = process.env.VERCEL === '1';
+const isVercel = false;
 
 // Initialize database and create tables
 function initializeDatabase() {
-  // Use in-memory database on Vercel
-  const db = isVercel 
-    ? new sqlite3.Database(':memory:')
-    : new sqlite3.Database(dbPath);
+  const db = getDatabase();
     
   console.log(`Initializing database: ${isVercel ? 'in-memory (Vercel)' : dbPath}`);
 
@@ -131,6 +130,7 @@ function initializeDatabase() {
     });
     insertSubject.finalize();
 
+    // After admin creation, add guest user creation
     // Create default admin user
     const adminEmail = 'admin@example.com';
     const adminPassword = 'admin123';
@@ -142,9 +142,36 @@ function initializeDatabase() {
 
     console.log('Database initialized successfully!');
     console.log(`Default admin account: ${adminEmail} / ${adminPassword}`);
+
+    // Create guest user if not exists
+    const guestUuid = 'guest-user';
+    db.get('SELECT * FROM user_profiles WHERE user_uuid = ?', [guestUuid], (err, row) => {
+      if (err) {
+        console.error('Error checking for guest user:', err);
+        return;
+      }
+      if (!row) {
+        db.run(
+          `INSERT INTO user_profiles (user_uuid, email, password_hash, full_name, role) 
+           VALUES (?, ?, ?, ?, ?)`,
+          [guestUuid, 'guest@example.com', 'no-password', 'Guest User', 'student'],
+          (err) => {
+            if (err) {
+              console.error('Error creating guest user:', err);
+            } else {
+              console.log('Guest user created successfully');
+            }
+          }
+        );
+      } else {
+        console.log('Guest user already exists');
+      }
+    });
   });
 
-  db.close();
+  // Do not close the db here
 }
+
+// Remove the createGuestUserIfNotExists function and its call
 
 module.exports = { initializeDatabase, dbPath };

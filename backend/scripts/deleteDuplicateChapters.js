@@ -29,20 +29,18 @@ async function deleteDuplicateChapters() {
           DELETE FROM chapters
           WHERE name = ? AND subject_id = ? AND grade_level = ? AND id != ?
         `, [dup.name, dup.subject_id, dup.grade_level, dup.min_id], function(err) {
-          if (err) reject(err);
-          else {
-            deleted += this.changes;
-            resolve();
-          }
-        });
+            if (err) reject(err);
+            else {
+              deleted += this.changes;
+              resolve();
+            }
+          });
       });
     }
 
     console.log(`Deleted ${deleted} duplicate chapters.`);
   } catch (error) {
     console.error('Error deleting duplicates:', error);
-  } finally {
-    db.close();
   }
 }
 

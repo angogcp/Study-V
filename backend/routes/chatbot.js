@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { authenticateToken } = require('../middleware/auth');
+
 const { getDatabase } = require('../database/connection');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
@@ -174,7 +174,6 @@ function saveChatMessage(userId, message, isFromUser) {
     }
   );
   
-  db.close();
 }
 
 // Create chat_messages table if it doesn't exist
@@ -195,14 +194,28 @@ function ensureChatMessagesTable() {
     }
   });
   
-  db.close();
 }
 
 // Ensure table exists when module is loaded
 ensureChatMessagesTable();
 
+// Add middleware to handle guest user for routes that require authentication
+router.use((req, res, next) => {
+  // If no user is authenticated, create a guest user
+  if (!req.user) {
+    req.user = {
+      id: 'guest-user',
+      email: 'guest@example.com',
+      full_name: 'Guest User',
+      role: 'student',
+      grade_level: '初中1'
+    };
+  }
+  next();
+});
+
 // Send message to chatbot
-router.post('/message', authenticateToken, async (req, res) => {
+router.post('/message', async (req, res) => {
   const { message, image, videoId } = req.body;
   const userId = req.user.id;
   console.log('Received image:', !!image);
@@ -236,9 +249,9 @@ router.post('/message', authenticateToken, async (req, res) => {
 });
 
 // Get chat history
-router.get('/history', authenticateToken, (req, res) => {
+router.get('/history', (req, res) => {
   const db = getDatabase();
-  const userId = req.user.userId;
+  const userId = req.user.id;
   
   db.all(
     `SELECT message_id as id, content, is_from_user, created_at 
@@ -248,7 +261,6 @@ router.get('/history', authenticateToken, (req, res) => {
     [userId],
     (err, messages) => {
       if (err) {
-        db.close();
         return res.status(500).json({ error: 'Failed to retrieve chat history' });
       }
       
@@ -260,7 +272,6 @@ router.get('/history', authenticateToken, (req, res) => {
       }));
       
       res.json({ messages: formattedMessages });
-      db.close();
     }
   );
 });
@@ -270,7 +281,7 @@ const puppeteer = require('puppeteer');
 const tesseract = require('tesseract.js');
 
 // New endpoint for capturing YouTube video frame
-router.post('/screenshot', authenticateToken, async (req, res) => {
+router.post('/ask', async (req, res) => {
   const { videoId, time } = req.body;
   
   if (!videoId || time === undefined) {

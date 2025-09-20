@@ -1,11 +1,24 @@
 const express = require('express');
 const { getDatabase } = require('../database/connection');
-const { authenticateToken } = require('../middleware/auth');
-
 const router = express.Router();
 
+// Add middleware to handle guest user for routes that require authentication
+router.use((req, res, next) => {
+  // If no user is authenticated, create a guest user
+  if (!req.user) {
+    req.user = {
+      id: 'guest-user',
+      email: 'guest@example.com',
+      full_name: 'Guest User',
+      role: 'student',
+      grade_level: '初中1'
+    };
+  }
+  next();
+});
+
 // Get user's progress for a specific video
-router.get('/video/:videoId', authenticateToken, (req, res) => {
+router.get('/video/:videoId', (req, res) => {
   const db = getDatabase();
   
   db.get(
@@ -30,12 +43,10 @@ router.get('/video/:videoId', authenticateToken, (req, res) => {
       res.json(progress);
     }
   );
-  
-  db.close();
 });
 
 // Get all user's video progress with optional filters
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', (req, res) => {
   const { completed, subject_id, grade_level, page = 1, limit = 20 } = req.query;
   const offset = (page - 1) * limit;
   
@@ -83,11 +94,13 @@ router.get('/', authenticateToken, (req, res) => {
     });
   });
 
-  db.close();
 });
 
 // Update video progress
-router.post('/update', authenticateToken, (req, res) => {
+router.post('/update', (req, res) => {
+  if (req.user.role === 'guest') {
+    return res.status(403).json({ message: 'Guest users cannot update progress' });
+  }
   const {
     videoId,
     watchTimeSeconds,
@@ -191,7 +204,6 @@ router.post('/update', authenticateToken, (req, res) => {
     }
   );
 
-  db.close();
 });
 
 // Helper function to update user statistics
@@ -221,11 +233,10 @@ function updateUserStats(userId) {
     }
   );
   
-  db.close();
 }
 
 // Get user learning statistics
-router.get('/stats', authenticateToken, (req, res) => {
+router.get('/stats', (req, res) => {
   const db = getDatabase();
   
   const queries = [
@@ -293,7 +304,6 @@ router.get('/stats', authenticateToken, (req, res) => {
     });
   });
   
-  db.close();
 });
 
 module.exports = router;

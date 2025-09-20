@@ -1,140 +1,72 @@
 const express = require('express');
+const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
 const { getDatabase } = require('../database/connection');
-const { JWT_SECRET } = require('../middleware/auth');
-
-const router = express.Router();
+const protect = require('../middleware/auth');
 
 // Register
-router.post('/register', (req, res) => {
-  const { email, password, fullName, gradeLevel } = req.body;
-
-  if (!email || !password || !fullName) {
-    return res.status(400).json({ error: 'All fields are required' });
-  }
-
+router.post('/register', async (req, res) => {
+  const { email, password, full_name, grade_level } = req.body;
   const db = getDatabase();
-  const userUuid = uuidv4();
-  const hashedPassword = bcrypt.hashSync(password, 10);
-
-  db.run(
-    `INSERT INTO user_profiles (user_uuid, email, password_hash, full_name, grade_level) VALUES (?, ?, ?, ?, ?)`,
-    [userUuid, email, hashedPassword, fullName, gradeLevel || '初中1'],
-    function(err) {
-      if (err) {
-        db.close();
-        if (err.message.includes('UNIQUE constraint failed')) {
-          return res.status(400).json({ error: 'Email already registered' });
-        }
-        return res.status(500).json({ error: 'Failed to register user' });
-      }
-
-      const token = jwt.sign(
-        { id: userUuid, email, role: 'student' },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      );
-
-      db.close();
-      res.json({
-        message: 'User registered successfully',
-        user: { id: userUuid, email, fullName, role: 'student', gradeLevel },
-        token
+  try {
+    // Check if user exists
+    const existing = await new Promise((resolve, reject) => {
+      db.get('SELECT * FROM user_profiles WHERE email = ?', [email], (err, row) => {
+        if (err) reject(err);
+        resolve(row);
       });
-    }
-  );
+    });
+    if (existing) return res.status(400).json({ error: 'Email already exists' });
+
+    const hashed = bcrypt.hashSync(password, 10);
+    const uuid = require('uuid').v4();
+
+    await new Promise((resolve, reject) => {
+      db.run(
+        'INSERT INTO user_profiles (user_uuid, email, password_hash, full_name, grade_level, role) VALUES (?, ?, ?, ?, ?, ?)',
+        [uuid, email, hashed, full_name, grade_level || '初中1', 'student'],
+        (err) => {
+          if (err) reject(err);
+          resolve();
+        }
+      );
+    });
+
+    const user = { id: uuid, email, full_name, grade_level, role: 'student' };
+    const token = jwt.sign(user, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+    res.json({ user, token });
+  } catch (error) {
+    res.status(500).json({ error: 'Registration failed' });
+  }
 });
 
 // Login
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
-  }
-
   const db = getDatabase();
-
-  db.get(
-    `SELECT * FROM user_profiles WHERE email = ?`,
-    [email],
-    (err, user) => {
-      if (err) {
-        db.close();
-        return res.status(500).json({ error: 'Database error' });
-      }
-
-      if (!user) {
-        db.close();
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
-
-      const isValidPassword = bcrypt.compareSync(password, user.password_hash);
-      if (!isValidPassword) {
-        db.close();
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
-
-      const token = jwt.sign(
-        { id: user.user_uuid, email: user.email, role: user.role },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      );
-
-      db.close();
-      res.json({
-        message: 'Login successful',
-        user: {
-          id: user.user_uuid,
-          email: user.email,
-          fullName: user.full_name,
-          role: user.role,
-          gradeLevel: user.grade_level,
-          totalWatchTime: user.total_watch_time,
-          videosCompleted: user.videos_completed,
-          notesCount: user.notes_count
-        },
-        token
+  try {
+    const user = await new Promise((resolve, reject) => {
+      db.get('SELECT * FROM user_profiles WHERE email = ?', [email], (err, row) => {
+        if (err) reject(err);
+        resolve(row);
       });
+    });
+    if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
-  );
+
+    const userData = { id: user.user_uuid, email: user.email, full_name: user.full_name, grade_level: user.grade_level, role: user.role };
+    const token = jwt.sign(userData, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+    res.json({ user: userData, token });
+  } catch (error) {
+    res.status(500).json({ error: 'Login failed' });
+  }
 });
 
-// Get current user profile
-router.get('/profile', require('../middleware/auth').authenticateToken, (req, res) => {
-  const db = getDatabase();
-
-  db.get(
-    `SELECT * FROM user_profiles WHERE user_uuid = ?`,
-    [req.user.id],
-    (err, user) => {
-      if (err) {
-        db.close();
-        return res.status(500).json({ error: 'Database error' });
-      }
-
-      if (!user) {
-        db.close();
-        return res.status(404).json({ error: 'User not found' });
-      }
-
-      db.close();
-      res.json({
-        id: user.user_uuid,
-        email: user.email,
-        fullName: user.full_name,
-        role: user.role,
-        gradeLevel: user.grade_level,
-        avatarUrl: user.avatar_url,
-        totalWatchTime: user.total_watch_time,
-        videosCompleted: user.videos_completed,
-        notesCount: user.notes_count,
-        createdAt: user.created_at
-      });
-    }
-  );
+// Profile
+router.get('/profile', protect, (req, res) => {
+  res.json(req.user);
 });
 
 module.exports = router;

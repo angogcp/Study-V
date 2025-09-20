@@ -62,66 +62,18 @@ const queryClient = new QueryClient({
 
 // Routes Component that uses Auth Context
 const AppRoutesWithAuth: React.FC = () => {
-  // Protected Route Component
-  const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { isAuthenticated, isLoading } = useAuth();
-    
-    if (isLoading) {
-      return <LoadingSpinner />;
-    }
-    
-    if (!isAuthenticated) {
-      return <Navigate to="/login" replace />;
-    }
-    
-    return <>{children}</>;
-  };
-
-  // Public Route Component (redirect to dashboard if already logged in)
-  const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { isAuthenticated, isLoading } = useAuth();
-    
-    if (isLoading) {
-      return <LoadingSpinner />;
-    }
-    
-    if (isAuthenticated) {
-      return <Navigate to="/dashboard" replace />;
-    }
-    
-    return <>{children}</>;
-  };
-
   return (
     <Routes>
-      {/* Public Routes */}
-      <Route path="/login" element={
-        <PublicRoute>
-          <Login />
-        </PublicRoute>
-      } />
-      <Route path="/register" element={
-        <PublicRoute>
-          <Register />
-        </PublicRoute>
-      } />
-      
-      {/* Protected Routes */}
-      <Route path="/" element={
-        <ProtectedRoute>
-          <Layout />
-        </ProtectedRoute>
-      }>
-        <Route index element={<Navigate to="/dashboard" replace />} />
+      {/* Main Routes */}
+      <Route path="/" element={<Layout />}>
+        <Route index element={<Dashboard />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="videos" element={<VideoList />} />
         <Route path="videos/:id" element={<VideoPlayer />} />
-        {/* Additional routes can be added here */}
         <Route path="progress" element={<LearningProgress />} />
         <Route path="notes" element={<MyNotes />} />
         <Route path="chatbot" element={<ChatbotPage />} />
         <Route path="settings" element={<div className="p-8 text-center text-gray-500">设置页面开发中...</div>} />
-        
         {/* Admin Routes */}
         <Route path="admin/user" element={<UserManagement />} />
         <Route path="admin/videos" element={<VideoManagement />} />
@@ -130,7 +82,7 @@ const AppRoutesWithAuth: React.FC = () => {
       </Route>
       
       {/* Fallback */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 };

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { BookOpen, Clock, Award } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -32,6 +33,16 @@ type ProgressData = {
 };
 
 const LearningProgress: React.FC = () => {
+  const { user } = useAuth();
+  
+  if (user.role === 'guest') {
+    return (
+      <div className="container mx-auto p-4">
+        <h1 className="text-2xl font-bold mb-4">Guest Mode</h1>
+        <p>Progress tracking is not available in guest mode.</p>
+      </div>
+    );
+  }
   const { data: progressData, isLoading } = useQuery<ProgressData>({
     queryKey: ['learning-progress'],
     queryFn: ProgressService.getLearningStats,

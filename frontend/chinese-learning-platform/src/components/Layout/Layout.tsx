@@ -141,9 +141,9 @@ const Layout: React.FC = () => {
                 <>
                   <div className="hidden sm:flex items-center space-x-2">
                     <Badge variant="secondary" className="text-xs">
-                      {user.gradeLevel}
+                      {user?.gradeLevel ?? ''}
                     </Badge>
-                    {user.role === 'admin' && (
+                    {user?.role === 'admin' && (
                       <Badge variant="default" className="text-xs bg-purple-100 text-purple-800">
                         管理员
                       </Badge>
@@ -154,17 +154,17 @@ const Layout: React.FC = () => {
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                         <Avatar className="h-8 w-8">
-                          <AvatarImage src={user.avatarUrl} alt={user.fullName} />
-                          <AvatarFallback>{user.fullName.charAt(0)}</AvatarFallback>
+                          <AvatarImage src={user?.avatarUrl} alt={user?.fullName ?? 'Guest'} />
+                          <AvatarFallback>{user?.fullName?.charAt(0) ?? 'G'}</AvatarFallback>
                         </Avatar>
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="w-56" align="end" forceMount>
                       <DropdownMenuLabel className="font-normal">
                         <div className="flex flex-col space-y-1">
-                          <p className="text-sm font-medium leading-none">{user.fullName}</p>
+                          <p className="text-sm font-medium leading-none">{user?.fullName ?? 'Guest'}</p>
                           <p className="text-xs leading-none text-muted-foreground">
-                            {user.email}
+                            {user?.email ?? 'Guest Mode'}
                           </p>
                         </div>
                       </DropdownMenuLabel>

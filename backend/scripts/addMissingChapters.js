@@ -33,8 +33,6 @@ async function addMissingChapters() {
     console.log(`Added ${inserted} new chapters.`);
   } catch (error) {
     console.error('Error adding chapters:', error);
-  } finally {
-    db.close();
   }
 }
 

@@ -1,5 +1,17 @@
 {
+	"name": "study-v",
+	"version": "1.0.0",
+	"description": "Malaysian Chinese School Video Learning Platform",
+	"scripts": {
+		"start": "concurrently \"cd backend && npm start\" \"cd frontend/chinese-learning-platform && pnpm run preview\"",
+		"dev": "concurrently \"cd backend && npm run dev\" \"cd frontend/chinese-learning-platform && pnpm run dev\"",
+		"install-deps": "npm install && cd backend && npm install && cd ../frontend/chinese-learning-platform && pnpm install --prefer-offline",
+		"build": "cd frontend/chinese-learning-platform && pnpm run build"
+	},
 	"dependencies": {
 		"papaparse": "^5.5.3"
+	},
+	"devDependencies": {
+		"concurrently": "^8.2.2"
 	}
 }

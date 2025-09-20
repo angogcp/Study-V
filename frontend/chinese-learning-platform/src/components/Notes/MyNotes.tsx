@@ -16,6 +16,16 @@ import { UserNote } from '@/types';
 
 const MyNotes: React.FC = () => {
   const { user } = useAuth();
+  
+  if (user.role === 'guest') {
+    return (
+      <div className="container mx-auto p-4">
+        <h1 className="text-2xl font-bold mb-4">Guest Mode</h1>
+        <p>Notes feature is not available in guest mode.</p>
+      </div>
+    );
+  }
+
   const queryClient = useQueryClient();
   const [selectedNote, setSelectedNote] = useState<UserNote | null>(null);
   const [isEditing, setIsEditing] = useState(false);

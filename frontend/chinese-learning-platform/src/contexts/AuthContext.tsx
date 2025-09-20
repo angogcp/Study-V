@@ -44,6 +44,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error('Failed to parse user data:', error);
           logout();
         }
+      } else {
+        setUser({
+          id: 'guest',
+          email: 'guest@example.com',
+          full_name: 'Guest User',
+          grade_level: '初中1',
+          role: 'user',
+          created_at: new Date().toISOString()
+        });
       }
       
       setIsLoading(false);

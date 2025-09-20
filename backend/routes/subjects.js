@@ -42,7 +42,7 @@ router.get('/:id', (req, res) => {
 });
 
 // Create new subject (admin only)
-router.post('/', authenticateToken, requireAdmin, (req, res) => {
+router.post('/', (req, res) => {
   const { name, nameChinese, description, iconUrl, colorCode, sortOrder } = req.body;
 
   if (!name || !nameChinese) {
@@ -77,7 +77,7 @@ router.post('/', authenticateToken, requireAdmin, (req, res) => {
 });
 
 // Update subject (admin only)
-router.put('/:id', authenticateToken, requireAdmin, (req, res) => {
+router.put('/:id', (req, res) => {
   const { name, nameChinese, description, iconUrl, colorCode, sortOrder, isActive } = req.body;
   const subjectId = req.params.id;
 
@@ -109,7 +109,7 @@ router.put('/:id', authenticateToken, requireAdmin, (req, res) => {
 });
 
 // Delete subject (admin only)
-router.delete('/:id', authenticateToken, requireAdmin, (req, res) => {
+router.delete('/:id', (req, res) => {
   const db = getDatabase();
 
   db.run(

@@ -6,15 +6,14 @@ require('dotenv').config();
 const { initializeDatabase } = require('./database/init');
 
 // Import routes
-const authRoutes = require('./routes/auth');
 const subjectRoutes = require('./routes/subjects');
 const videoRoutes = require('./routes/videos');
 const progressRoutes = require('./routes/progress');
 const notesRoutes = require('./routes/notes');
 const chapterRoutes = require('./routes/chapters');
-const userRoutes = require('./routes/users');
 const chatbotRoutes = require('./routes/chatbot');
 const testRoutes = require('./routes/test');
+const authRoutes = require('./routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -80,18 +79,16 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API Routes - 确保路由注册顺序正确
-app.use('/api/auth', authRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/progress', progressRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/chapters', chapterRoutes);
-app.use('/api/users', userRoutes);
 app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/test', testRoutes);
+app.use('/api/auth', authRoutes);
 
-// Auth routes without /api prefix for compatibility
-app.use('/auth', authRoutes);
+
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

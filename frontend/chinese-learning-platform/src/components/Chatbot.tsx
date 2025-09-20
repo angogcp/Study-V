@@ -82,7 +82,9 @@ const Chatbot: React.FC<ChatbotProps> = ({ messages, onSendMessage, isLoading })
               >
                 {message.image && <img src={message.image} alt="Screenshot" className="max-w-full rounded mb-2" />}
                 {message.role === 'bot' ? (
-                  <ReactMarkdown className="whitespace-pre-wrap prose prose-sm max-w-none">{message.content}</ReactMarkdown>
+                  <div className="whitespace-pre-wrap prose prose-sm max-w-none">
+                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                  </div>
                 ) : (
                   <p className="whitespace-pre-wrap">{message.content}</p>
                 )}

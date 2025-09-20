@@ -151,23 +151,38 @@ video-learning-platform/
 - pnpm 或 npm
 - 现代浏览器
 
-### 后端启动
+### 统一安装依赖（推荐）
+从项目根目录运行：
 ```bash
-cd video-learning-platform/backend
+npm run install-deps
+```
+这将安装根目录、后端和前端的所有依赖。
+
+### 统一开发启动（推荐）
+从项目根目录运行：
+```bash
+npm run dev
+```
+这将同时启动后端（端口5000）和前端（端口5173）开发服务器。
+
+### 后端启动（独立）
+```bash
+cd backend
 npm install
-npm start
+npm run dev
 ```
 
-### 前端开发
+### 前端开发（独立）
 ```bash
-cd video-learning-platform/frontend/chinese-learning-platform
+cd frontend/chinese-learning-platform
 pnpm install
-pnpm dev
+pnpm run dev
 ```
 
 ### 前端构建
 ```bash
-pnpm build
+cd frontend/chinese-learning-platform
+pnpm run build
 ```
 
 ## 📋 API文档
