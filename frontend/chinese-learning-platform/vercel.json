@@ -13,6 +13,14 @@
       }
     },
     {
+      "src": "/sql-wasm.wasm",
+      "dest": "/sql-wasm.wasm",
+      "headers": {
+        "content-type": "application/wasm",
+        "cache-control": "public, max-age=3600"
+      }
+    },
+    {
       "src": "/(.*)",
       "dest": "/index.html"
     }
