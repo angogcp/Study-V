@@ -3,7 +3,7 @@
   "buildCommand": "pnpm run build:prod",
   "outputDirectory": "dist",
   "installCommand": "pnpm install",
-  "routes": [
+  "headers": [
     {
       "source": "/assets/(.*)\\.js",
       "headers": [
