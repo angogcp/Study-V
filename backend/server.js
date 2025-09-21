@@ -64,7 +64,8 @@ const corsOptions = {
     'Accept',
     'Origin',
     'Cache-Control',
-    'X-File-Name'
+    'X-File-Name',
+    'ngrok-skip-browser-warning'
   ],
   credentials: true, // Allow cookies and authorization headers
   optionsSuccessStatus: 200, // Some legacy browsers (IE11, various SmartTVs) choke on 204
