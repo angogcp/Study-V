@@ -1,9 +1,14 @@
 import api from '@/lib/api';
+
 export class AuthService {
   static async login(email: string, password: string) {
-    const response = await fetch('http://localhost:5000/api/auth/login', {
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true'
+      },
       body: JSON.stringify({ email, password })
     });
     
@@ -17,9 +22,13 @@ export class AuthService {
   }
 
   static async register(email: string, password: string, fullName: string, gradeLevel: string) {
-    const response = await fetch('http://localhost:5000/api/auth/register', {
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true'
+      },
       body: JSON.stringify({ email, password, full_name: fullName, grade_level: gradeLevel })
     });
     
