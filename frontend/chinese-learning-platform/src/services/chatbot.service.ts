@@ -97,22 +97,27 @@ export class ChatbotService {
   static async sendMessage(options: { message: string; videoContext?: VideoContext; context?: ChatMessage[] }): Promise<ChatResponse> {
     const { message, videoContext, context = [] } = options;
 
-    const systemPrompt = `You are a helpful learning assistant that uses the Socratic method to guide students in their thinking. Respond in Chinese. Encourage critical thinking by asking questions rather than giving direct answers. Keep responses concise but thought-provoking.`;
+    // Create request payload matching backend API expectations
+    const payload: any = {
+      message: message
+    };
 
-    const apiMessages = [
-      { role: 'system', content: systemPrompt },
-      ...context.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
-      { role: 'user', content: message }
-    ];
-
-    if (videoContext) {
-      apiMessages[apiMessages.length - 1].content += `\nVideo context: ${JSON.stringify(videoContext)}`;
+    // Add videoId if available
+    if (videoContext && videoContext.title) {
+      payload.videoId = videoContext.title;
     }
 
+    // Add image if present (not used in this implementation)
+    // payload.image = null;
+
     try {
-      const response = await api.post('/chatbot/message', { messages: apiMessages });
-      const botMessage = response.data.message.trim();
-      return { message: botMessage };
+      console.log('Sending to backend:', payload);
+      const response = await api.post('/chatbot/message', payload);
+      console.log('Backend response:', response.data);
+      
+      // Extract the LLM response from the backend response
+      const botMessage = response.data.llmResponse || response.data.message || '';
+      return { message: botMessage.trim() };
     } catch (error) {
       console.error('API error:', error);
       return { message: this.generateFallbackResponse(message) };

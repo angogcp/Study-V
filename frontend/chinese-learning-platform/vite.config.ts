@@ -14,11 +14,17 @@ export default defineConfig({
       includeProps: true,
     })
   ],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+      }
+    }
+  },
   resolve: {
     alias: {
-      "react": path.resolve(__dirname, "./node_modules/react"),
-      "react-dom": path.resolve(__dirname, "./node_modules/react-dom"),
-      "@": path.resolve(__dirname, "./src"),
+      '@': path.resolve(__dirname, './src'),
     },
   },
 })

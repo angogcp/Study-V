@@ -3,18 +3,10 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { getDatabase } = require('../database/connection');
-const protect = require('../middleware/auth');
-
-// Middleware to check if user is admin
-const isAdmin = (req, res, next) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
-  next();
-};
+const { authenticateToken, isAdmin } = require('../middleware/auth');
 
 // Get all users with pagination and search
-router.get('/', protect, isAdmin, async (req, res) => {
+router.get('/', authenticateToken, isAdmin, async (req, res) => {
   const { search, page = 1, limit = 10 } = req.query;
   const db = getDatabase();
   try {
@@ -56,7 +48,7 @@ router.get('/', protect, isAdmin, async (req, res) => {
 });
 
 // Get user by ID
-router.get('/:id', protect, isAdmin, async (req, res) => {
+router.get('/:id', authenticateToken, isAdmin, async (req, res) => {
   const db = getDatabase();
   try {
     const user = await new Promise((resolve, reject) => {
@@ -73,7 +65,7 @@ router.get('/:id', protect, isAdmin, async (req, res) => {
 });
 
 // Create new user
-router.post('/', protect, isAdmin, async (req, res) => {
+router.post('/', authenticateToken, isAdmin, async (req, res) => {
   const { email, password, fullName, gradeLevel, role } = req.body;
   const db = getDatabase();
   try {
@@ -107,7 +99,7 @@ router.post('/', protect, isAdmin, async (req, res) => {
 });
 
 // Update user
-router.put('/:id', protect, isAdmin, async (req, res) => {
+router.put('/:id', authenticateToken, isAdmin, async (req, res) => {
   const { email, password, fullName, gradeLevel, role } = req.body;
   const db = getDatabase();
   try {
@@ -153,7 +145,7 @@ router.put('/:id', protect, isAdmin, async (req, res) => {
 });
 
 // Delete user
-router.delete('/:id', protect, isAdmin, async (req, res) => {
+router.delete('/:id', authenticateToken, isAdmin, async (req, res) => {
   const db = getDatabase();
   try {
     await new Promise((resolve, reject) => {

@@ -75,10 +75,14 @@ const Chatbot: React.FC<ChatbotProps> = ({ messages, onSendMessage, isLoading, c
                 )}
               >
                 <div className={cn(
-                  "p-3 rounded-lg",
+                  "p-3 rounded-lg markdown-content",
                   message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-100'
                 )}>
-                  {message.content}
+                  {message.role === 'bot' ? (
+                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                  ) : (
+                    message.content
+                  )}
                   {message.image && (
                     <img src={message.image} alt="Uploaded" className="mt-2 max-w-[200px] rounded" />
                   )}

@@ -22,7 +22,8 @@ import {
   LogOut,
   GraduationCap,
   Users,
-  MessageCircle
+  MessageCircle,
+  PlayCircle
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -55,6 +56,12 @@ const Layout: React.FC = () => {
       href: '/videos',
       icon: Video,
       current: location.pathname.startsWith('/videos')
+    },
+    {
+      name: '播放列表',
+      href: '/playlists',
+      icon: PlayCircle,
+      current: location.pathname.startsWith('/playlists')
     },
     {
       name: '学习进度',
@@ -100,6 +107,12 @@ const Layout: React.FC = () => {
       href: '/admin/chapters',
       icon: FileText,
       current: location.pathname === '/admin/chapters'
+    },
+    {
+      name: '播放列表管理',
+      href: '/admin/playlists',
+      icon: PlayCircle,
+      current: location.pathname === '/admin/playlists'
     },
   ];
 

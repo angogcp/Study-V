@@ -84,6 +84,9 @@ function determineSubject(message) {
 
 // Generate a response using DeepSeek LLM API
 async function generateLLMResponse(message, image, userId, videoId) {
+  // Always use LLM for all messages regardless of length
+  // Skip fallback logic and directly use LLM
+  console.log('Processing message with LLM:', message);
   try {
     let videoContext = null;
     let contextMarkdown = '';
@@ -128,6 +131,7 @@ async function generateLLMResponse(message, image, userId, videoId) {
     return { llmResponse: response.data.choices[0].message.content, ocrMarkdown: '' };
   } catch (error) {
     console.error('DeepSeek API call failed:', error.response ? error.response.data : error.message);
+    // Always use fallback response when API fails, regardless of message length
     return { llmResponse: generateFallbackResponse(message), ocrMarkdown: '' };
   }
 }
@@ -141,10 +145,17 @@ function generateFallbackResponse(message) {
   if (message.includes('?') || message.includes('？')) {
     // If user asks a question, guide them to think through it
     const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
-    return `我理解你的问题。together思考：${randomPrompt}`;
+    return `我理解你的问题。让我们一起思考：${randomPrompt}`;
   } else if (message.length < 20) {
-    // If message is too short, ask for more details
-    return "能否请你详细描述一下你的问题或想法？这样我才能更好地引导你思考。";
+    // For short messages, we'll still provide fallback responses when LLM fails
+    const shortResponses = [
+      "能否请你详细描述一下你的问题或想法？这样我才能更好地引导你思考。",
+      "你能再多提供一些信息吗？这样我可以更好地理解你的问题。",
+      "请再详细说明一下你的想法，这样我们可以一起深入探讨。",
+      "你能展开解释一下你的问题吗？这样我才能给你更有针对性的引导。",
+      "为了更好地帮助你，你能分享更多关于这个话题的细节吗？"
+    ];
+    return shortResponses[Math.floor(Math.random() * shortResponses.length)];
   } else {
     // Generate a thoughtful response with follow-up questions
     const randomPrompt1 = prompts[Math.floor(Math.random() * prompts.length)];
@@ -233,7 +244,60 @@ router.post('/message', async (req, res) => {
   let effectiveMessage = message || '';
   
   try {
-    const result = await generateLLMResponse(effectiveMessage, image, effectiveUserId, videoId);
+    // Always use LLM for all messages regardless of length
+    // Force direct LLM usage without fallback for all messages
+    let result;
+    
+    // Skip the fallback logic entirely and directly call the LLM API
+    try {
+      let videoContext = null;
+      let contextMarkdown = '';
+      const db = getDatabase();
+      if (videoId) {
+        videoContext = await new Promise((resolve) => {
+          db.get('SELECT v.title, v.title_chinese, v.description, v.grade_level, v.chapter, s.name_chinese as subject FROM videos v LEFT JOIN subjects s ON v.subject_id = s.id WHERE v.youtube_id = ?', [videoId], (err, row) => {
+            if (err) console.error('Database query error:', err);
+            resolve(row);
+          });
+        });
+        if (videoContext) {
+          contextMarkdown = `# Video Context\n\nTitle: ${videoContext.title_chinese || videoContext.title}\nDescription: ${videoContext.description || 'No description'}\nSubject: ${videoContext.subject || 'Unknown'}\nGrade: ${videoContext.grade_level || 'Unknown'}\nChapter: ${videoContext.chapter || 'Unknown'}`;
+        }
+      }
+      
+      let systemPrompt = "你是一位使用苏格拉底式教学法的中文学习助手。引导学生通过提问来思考问题，而不是直接给出答案。";
+      let userPrompt = effectiveMessage;
+      if (contextMarkdown) {
+        userPrompt += `\n${contextMarkdown}`;
+      }
+      
+      const response = await axios.post(DEEPSEEK_API_URL, {
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 500
+      }, {
+        headers: {
+          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      result = { llmResponse: response.data.choices[0].message.content, ocrMarkdown: '' };
+    } catch (error) {
+      console.error('Direct LLM API call failed:', error.response ? error.response.data : error.message);
+      // If direct LLM call fails, use a more varied fallback
+      const subject = determineSubject(effectiveMessage);
+      const prompts = socraticPrompts[subject];
+      const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
+      result = { 
+        llmResponse: `我现在无法连接到AI服务，但我们可以继续讨论。${randomPrompt}`, 
+        ocrMarkdown: '' 
+      };
+    }
     
     saveChatMessage(effectiveUserId, result.llmResponse, false);
     

@@ -10,97 +10,137 @@ router.get('/', async (req, res) => {
   
   const db = getDatabase();
   
-  let query = db.from('videos')
-    .select('*, subjects!inner(name: subject_name, name_chinese: subject_name_chinese, color_code: subject_color)')
-    .eq('is_active', 1);
-  
-  if (subject_id) {
-    query = query.eq('subject_id', subject_id);
-  }
-  
-  if (grade_level) {
-    query = query.eq('grade_level', grade_level);
-  }
-  
-  if (chapter) {
-    query = query.eq('chapter', chapter);
-  }
-  
-  if (search) {
-    query = query.or(`title.ilike.%${search}%,title_chinese.ilike.%${search}%,description.ilike.%${search}%,topic.ilike.%${search}%`);
-  }
-  
-  const { data: videos, error } = await query
-    .order('sort_order', { ascending: true })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
-  
-  if (error) {
-    return res.status(500).json({ error: 'Database error' });
-  }
-  
-  // Get total count for pagination
-  let countQuery = db.from('videos')
-    .select('*', { count: 'exact', head: true })
-    .eq('is_active', 1);
-  
-  if (subject_id) {
-    countQuery = countQuery.eq('subject_id', subject_id);
-  }
-  
-  if (grade_level) {
-    countQuery = countQuery.eq('grade_level', grade_level);
-  }
-  
-  if (chapter) {
-    countQuery = countQuery.eq('chapter', chapter);
-  }
-  
-  if (search) {
-    countQuery = countQuery.or(`title.ilike.%${search}%,title_chinese.ilike.%${search}%,description.ilike.%${search}%,topic.ilike.%${search}%`);
-  }
-  
-  const { count: total, error: countError } = await countQuery;
-  
-  if (countError) {
-    return res.status(500).json({ error: 'Database error' });
-  }
-  
-  res.json({
-    videos,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      total,
-      pages: Math.ceil(total / limit)
+  try {
+    // Build WHERE clause
+    let whereClauses = ['v.is_active = 1'];
+    let params = [];
+    
+    if (subject_id) {
+      whereClauses.push('v.subject_id = ?');
+      params.push(subject_id);
     }
-  });
+    
+    if (grade_level) {
+      whereClauses.push('v.grade_level = ?');
+      params.push(grade_level);
+    }
+    
+    if (chapter) {
+      whereClauses.push('v.chapter = ?');
+      params.push(chapter);
+    }
+    
+    if (search) {
+      whereClauses.push('(LOWER(v.title) LIKE ? OR LOWER(v.title_chinese) LIKE ? OR LOWER(v.description) LIKE ? OR LOWER(v.topic) LIKE ?)');
+      const searchParam = `%${search.toLowerCase()}%`;
+      params.push(searchParam, searchParam, searchParam, searchParam);
+    }
+    
+    const whereSql = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
+    
+    // Main query
+    const sql = `
+      SELECT v.*, 
+             s.name AS subject_name, 
+             s.name_chinese AS subject_name_chinese, 
+             s.color_code AS subject_color
+      FROM videos v
+      INNER JOIN subjects s ON v.subject_id = s.id
+      ${whereSql}
+      ORDER BY v.sort_order ASC, v.created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+    
+    const queryParams = [...params, limit, offset];
+    
+    const videos = await new Promise((resolve, reject) => {
+      db.all(sql, queryParams, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+
+    // Replace thumbnail URLs to use hqdefault instead of maxresdefault
+    const modifiedVideos = videos.map(video => ({
+      ...video,
+      thumbnail_url: video.thumbnail_url?.replace('maxresdefault.jpg', 'hqdefault.jpg')
+    }));
+    
+    // Count query
+    const countSql = `
+      SELECT COUNT(*) as count
+      FROM videos v
+      ${whereSql}
+    `;
+    
+    const count = await new Promise((resolve, reject) => {
+      db.get(countSql, params, (err, row) => {
+        if (err) reject(err);
+        else resolve(row.count);
+      });
+    });
+    
+    res.json({
+      videos: modifiedVideos,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: count,
+        pages: Math.ceil(count / limit)
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Get single video by ID
 router.get('/:id', async (req, res) => {
   const db = getDatabase();
   
-  const { data: video, error } = await db.from('videos')
-    .select('*, subjects!inner(name: subject_name, name_chinese: subject_name_chinese, color_code: subject_color)')
-    .eq('id', req.params.id)
-    .eq('is_active', 1)
-    .single();
-  
-  if (error) {
-    return res.status(500).json({ error: 'Database error' });
+  try {
+    const sql = `
+      SELECT v.*, 
+             s.name AS subject_name, 
+             s.name_chinese AS subject_name_chinese, 
+             s.color_code AS subject_color
+      FROM videos v
+      INNER JOIN subjects s ON v.subject_id = s.id
+      WHERE v.id = ? AND v.is_active = 1
+    `;
+    
+    const video = await new Promise((resolve, reject) => {
+      db.get(sql, [req.params.id], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+    
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+    
+    // Replace thumbnail URL to use hqdefault instead of maxresdefault
+    video.thumbnail_url = video.thumbnail_url?.replace('maxresdefault.jpg', 'hqdefault.jpg');
+    
+    // Increment view count
+    await new Promise((resolve, reject) => {
+      db.run(
+        'UPDATE videos SET view_count = view_count + 1 WHERE id = ?',
+        [req.params.id],
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        }
+      );
+    });
+    
+    res.json(video);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Database error' });
   }
-  
-  if (!video) {
-    return res.status(404).json({ error: 'Video not found' });
-  }
-  
-  // Increment view count
-  await db.from('videos')
-    .update({ view_count: video.view_count + 1 })
-    .eq('id', req.params.id);
-  
-  res.json(video);
 });
 
 module.exports = router;

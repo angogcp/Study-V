@@ -36,3 +36,51 @@ img {
 .fixed {
   position: fixed;
 }
+
+.markdown-content h1 {
+  @apply text-2xl font-bold my-4;
+}
+
+.markdown-content h2 {
+  @apply text-xl font-bold my-3;
+}
+
+.markdown-content h3 {
+  @apply text-lg font-bold my-2;
+}
+
+.markdown-content p {
+  @apply my-2;
+}
+
+.markdown-content ul {
+  @apply list-disc pl-6 my-2;
+}
+
+.markdown-content ol {
+  @apply list-decimal pl-6 my-2;
+}
+
+.markdown-content li {
+  @apply my-1;
+}
+
+.markdown-content strong {
+  @apply font-bold;
+}
+
+.markdown-content em {
+  @apply italic;
+}
+
+.markdown-content a {
+  @apply text-blue-600 hover:underline;
+}
+
+.markdown-content code {
+  @apply bg-gray-100 px-1 py-0.5 rounded;
+}
+
+.markdown-content pre {
+  @apply bg-gray-100 p-4 rounded overflow-x-auto my-4;
+}

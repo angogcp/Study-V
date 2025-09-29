@@ -9,6 +9,8 @@ import Register from '@/components/Auth/Register';
 import Dashboard from '@/components/Dashboard/Dashboard';
 import VideoList from '@/components/Videos/VideoList';
 import VideoPlayer from '@/components/Videos/VideoPlayer';
+import PlaylistPage from '@/pages/PlaylistPage';
+import PlaylistDetail from '@/pages/PlaylistDetail';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import './App.css';
 import VideoManagement from '@/components/Admin/VideoManagement';
@@ -18,6 +20,7 @@ import LearningProgress from '@/components/Progress/LearningProgress';
 import api from '@/lib/api';
 import SubjectManagement from '@/components/Admin/SubjectManagement';
 import ChapterManagement from '@/components/Admin/ChapterManagement';
+import PlaylistManagement from '@/components/Admin/PlaylistManagement';
 import ChatbotPage from '@/pages/ChatbotPage';
 import { ProtectedRoute, AdminRoute } from '@/components/ProtectedRoute';
 
@@ -76,6 +79,8 @@ const AppRoutesWithAuth: React.FC = () => {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="videos" element={<VideoList />} />
           <Route path="videos/:id" element={<VideoPlayer />} />
+          <Route path="playlists" element={<PlaylistPage />} />
+          <Route path="playlist/:id" element={<PlaylistDetail />} />
           <Route path="progress" element={<LearningProgress />} />
           <Route path="notes" element={<MyNotes />} />
           <Route path="chatbot" element={<ChatbotPage />} />
@@ -87,6 +92,7 @@ const AppRoutesWithAuth: React.FC = () => {
             <Route path="admin/videos" element={<VideoManagement />} />
             <Route path="admin/subjects" element={<SubjectManagement />} />
             <Route path="admin/chapters" element={<ChapterManagement />} />
+            <Route path="admin/playlists" element={<PlaylistManagement />} />
           </Route>
         </Route>
       </Route>
