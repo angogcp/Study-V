@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -27,12 +27,15 @@ import {
   Edit,
   Trash2, 
   MessageCircle,
-  Camera
+  Camera,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { VideoProgress, UserNote } from '@/types';
 import { motion } from 'framer-motion';
 import Chatbot from '@/components/Chatbot';
 import YouTube from 'react-youtube';
+import { useSearchParams } from 'react-router-dom';
 
 
 
@@ -342,19 +345,57 @@ const onYoutubeReady = (event: any) => {
   }
 };
 
+
+
+// Add playlist navigation logic inside VideoPlayer component, preferably after existing useQuery hooks
+const [searchParams] = useSearchParams();
+const playlistId = searchParams.get('playlist');
+
+const { data: playlistVideos } = useQuery({
+  queryKey: ['playlistVideos', playlistId],
+  queryFn: async () => {
+    const response = await api.get(`/playlists/${playlistId}/videos`);
+    return response.data.sort((a, b) => a.order - b.order);
+  },
+  enabled: !!playlistId,
+});
+
+const currentIndex = useMemo(() => {
+  if (!playlistVideos || !video) return -1;
+  return playlistVideos.findIndex(pv => pv.video_id === video.id);
+}, [playlistVideos, video]);
+
+const hasPrevious = currentIndex > 0;
+const hasNext = currentIndex >= 0 && currentIndex < playlistVideos?.length - 1;
+
+const playPrevious = () => {
+  if (hasPrevious) {
+    const prevVideo = playlistVideos[currentIndex - 1];
+    navigate(`/videos/${prevVideo.video_id}?playlist=${playlistId}`);
+  }
+};
+
+const playNext = () => {
+  if (hasNext) {
+    const nextVideo = playlistVideos[currentIndex + 1];
+    navigate(`/videos/${nextVideo.video_id}?playlist=${playlistId}`);
+  }
+};
+
+// Update onYoutubeStateChange to include auto-play next when video ends
 const onYoutubeStateChange = (event: any) => {
-  // 播放状态: 1=播放, 2=暂停, 0=结束
-  if (event.data === 1) {
-    setIsPlaying(true);
+  const state = event.data;
+  setIsPlaying(state === 1);
+
+  if (state === 0) {
+    stopProgressTracking();
+    if (playlistId && hasNext) {
+      playNext();
+    }
+  } else if (state === 1) {
     startProgressTracking();
-  } else if (event.data === 2) {
-    setIsPlaying(false);
+  } else if (state === 2) {
     stopProgressTracking();
-  } else if (event.data === 0) {
-    setIsPlaying(false);
-    stopProgressTracking();
-    updateProgress(youtubePlayerRef.current.getDuration());
-    toast.success('恭喜！您已完成本视频学习');
   }
 };
 
@@ -460,8 +501,17 @@ useEffect(() => {
             </div>
 
             {/* Video Controls */}
-            <div className="flex gap-2 pt-2">
-              {/* Screenshot button removed due to client-side migration limitations */}
+            <div className="flex gap-2 pt-2 justify-center">
+              {playlistId && (
+                <>
+                  <Button onClick={playPrevious} disabled={!hasPrevious}>
+                    <ChevronLeft className="h-4 w-4" /> Previous
+                  </Button>
+                  <Button onClick={playNext} disabled={!hasNext}>
+                    Next <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
             </div>
           </div>
           
