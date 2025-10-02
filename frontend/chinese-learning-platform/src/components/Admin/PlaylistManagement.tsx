@@ -170,6 +170,25 @@ const PlaylistManagement: React.FC = () => {
   const [isAddVideoDialogOpen, setIsAddVideoDialogOpen] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<number | null>(null);
   const [videoOrder, setVideoOrder] = useState<number>(0);
+  const [selectedGrade, setSelectedGrade] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState(0);
+  const [selectedChapter, setSelectedChapter] = useState('');
+  const [chapters, setChapters] = useState([]);
+  const { data: subjects } = useQuery({
+    queryKey: ['subjects'],
+    queryFn: () => fetch('/api/subjects').then(res => res.json()),
+  });
+  const { data: availableVideos, isLoading: isLoadingAvailableVideos } = useQuery({
+    queryKey: ['availableVideos', selectedGrade, selectedSubject, selectedChapter],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (selectedGrade) params.append('grade_level', selectedGrade);
+      if (selectedSubject) params.append('subject_id', selectedSubject.toString());
+      if (selectedChapter) params.append('chapter', selectedChapter);
+      return fetch(`/api/videos?${params}`).then(res => res.json());
+    },
+    enabled: isAddVideoDialogOpen,
+  });
 
   // Queries
   const { data: playlists, isLoading: isLoadingPlaylists } = useQuery({
@@ -301,6 +320,33 @@ const PlaylistManagement: React.FC = () => {
       setVideoOrder(1);
     }
   }, [playlistVideos]);
+  
+  // Fetch chapters when grade and subject are selected
+  useEffect(() => {
+    if (selectedGrade && selectedSubject) {
+      const fetchChapters = async () => {
+        try {
+          const params = new URLSearchParams();
+          if (selectedGrade) params.append('grade_level', selectedGrade);
+          if (selectedSubject) params.append('subject_id', selectedSubject.toString());
+          
+          const response = await fetch(`/api/chapters?${params}`);
+          const data = await response.json();
+          setChapters(data || []);
+        } catch (error) {
+          console.error('Error fetching chapters:', error);
+          setChapters([]);
+        }
+      };
+      
+      fetchChapters();
+    } else {
+      setChapters([]);
+    }
+    
+    // Reset chapter selection when grade or subject changes
+    setSelectedChapter('');
+  }, [selectedGrade, selectedSubject]);
 
   if (isLoadingPlaylists) {
     return <LoadingSpinner />;
@@ -421,6 +467,37 @@ const PlaylistManagement: React.FC = () => {
                       </DialogHeader>
                       <div className="space-y-4 mt-4">
                         <div>
+                          <label htmlFor="grade" className="block text-sm font-medium mb-1">Grade</label>
+                          <select id="grade" className="w-full p-2 border rounded-md" value={selectedGrade} onChange={e => setSelectedGrade(e.target.value)}>
+                            <option value="">All Grades</option>
+                            <option value="初中1">初中1</option>
+                            <option value="初中2">初中2</option>
+                            <option value="初中3">初中3</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor="subject" className="block text-sm font-medium mb-1">Subject</label>
+                          <select id="subject" className="w-full p-2 border rounded-md" value={selectedSubject} onChange={e => setSelectedSubject(Number(e.target.value))}>
+                            <option value={0}>All Subjects</option>
+                            {subjects?.map(subject => (
+                              <option key={subject.id} value={subject.id}>
+                                {subject.name_chinese || subject.name_english}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor="chapter" className="block text-sm font-medium mb-1">Chapter</label>
+                          <select id="chapter" className="w-full p-2 border rounded-md" value={selectedChapter} onChange={e => setSelectedChapter(e.target.value)} disabled={!selectedSubject || !selectedGrade}>
+                            <option value="">All Chapters</option>
+                            {Array.isArray(chapters) && chapters.map(chapter => (
+                              <option key={chapter.id} value={chapter.title_chinese}>
+                                {chapter.title_chinese || chapter.title_english}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
                           <label htmlFor="video" className="block text-sm font-medium mb-1">
                             Select Video
                           </label>
@@ -431,8 +508,7 @@ const PlaylistManagement: React.FC = () => {
                             onChange={e => setSelectedVideoId(Number(e.target.value))}
                           >
                             <option value="">Select a video</option>
-                            {videos &&
-                              videos.map(video => (
+                            {Array.isArray(availableVideos) && availableVideos.map(video => (
                                 <option key={video.id} value={video.id}>
                                   {video.title}
                                 </option>

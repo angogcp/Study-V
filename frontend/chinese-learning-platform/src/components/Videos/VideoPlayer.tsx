@@ -224,6 +224,7 @@ const handleDeleteNote = (id: number) => {
           subject: video?.subject_name_chinese || '',
           topic: video?.topic || '',
           title: video?.title_chinese || video?.title || '',
+          youtubeId: video?.youtube_id || '',
           currentTime: formatTime(currentTime)
         },
         context: chatMessages

@@ -103,7 +103,9 @@ export class ChatbotService {
     };
 
     // Add videoId if available
-    if (videoContext && videoContext.title) {
+    if (videoContext && videoContext.youtubeId) {
+      payload.videoId = videoContext.youtubeId;
+    } else if (videoContext && videoContext.title) {
       payload.videoId = videoContext.title;
     }
 

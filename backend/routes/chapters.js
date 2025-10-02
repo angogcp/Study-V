@@ -10,23 +10,38 @@ router.get('/', async (req, res) => {
   
   const db = getDatabase();
   
-  let query = db.from('chapters')
-    .select('*, subjects!inner(name: subject_name, name_chinese: subject_name_chinese)');
-  
-  if (subject_id) {
-    query = query.eq('subject_id', subject_id);
-  }
-  
-  if (grade_level) {
-    query = query.eq('grade_level', grade_level);
-  }
-  
-  const { data: chapters, error } = await query.order('sort_order', { ascending: true });
-  
-  if (error) {
+  let sql = `
+  SELECT c.*, 
+         s.name as subject_name, 
+         s.name_chinese as subject_name_chinese
+  FROM chapters c
+  INNER JOIN subjects s ON c.subject_id = s.id
+`;
+const params = [];
+const whereClauses = [];
+
+if (subject_id) {
+  whereClauses.push('c.subject_id = ?');
+  params.push(subject_id);
+}
+
+if (grade_level) {
+  whereClauses.push('c.grade_level = ?');
+  params.push(grade_level);
+}
+
+if (whereClauses.length > 0) {
+  sql += ' WHERE ' + whereClauses.join(' AND ');
+}
+
+sql += ' ORDER BY c.sort_order ASC';
+
+db.all(sql, params, (err, rows) => {
+  if (err) {
     return res.status(500).json({ error: 'Database error' });
   }
-  res.json({ chapters });
+  res.json(rows);
+});
 });
 
 // Create new chapter (admin only)
