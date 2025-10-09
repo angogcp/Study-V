@@ -20,9 +20,6 @@ const playlistRoutes = require('./routes/playlists');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Initialize database on startup
-initializeDatabase();
-
 // CORS Configuration
 const corsOptions = {
   origin: function (origin, callback) {
@@ -81,7 +78,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Serve static files (for file uploads, avatars, etc.)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// API Routes - 确保路由注册顺序正确
+// API Routes
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/progress', progressRoutes);
@@ -93,7 +90,22 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/playlists', playlistRoutes);
 
+// Initialize database on startup
+// Wrap in async IIFE to await initialization
+(async () => {
+  await initializeDatabase();
 
+  const server = app.listen(PORT, () => {
+    console.log(`🚀 Server is running on port ${PORT}`);
+    console.log(`🌐 API available at: http://localhost:${PORT}/api`);
+    console.log(`🏥 Database: Supabase Cloud`);
+  });
+
+  console.log('After listen');
+})();
+
+// Remove module.exports = app; if not needed, or move it outside
+module.exports = app;
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -123,13 +135,3 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
-
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
-  console.log(`🌐 API available at: http://localhost:${PORT}/api`);
-  console.log(`🏥 Database: SQLite3 local storage`);
-});
-
-console.log('After listen');
-
-module.exports = app;

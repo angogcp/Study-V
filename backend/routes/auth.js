@@ -8,35 +8,38 @@ const { authenticateToken } = require('../middleware/auth');
 // Register
 router.post('/register', async (req, res) => {
   const { email, password, full_name, grade_level } = req.body;
-  const db = getDatabase();
+  const supabase = getDatabase();
   try {
     // Check if user exists
-    const existing = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM user_profiles WHERE email = ?', [email], (err, row) => {
-        if (err) reject(err);
-        resolve(row);
-      });
-    });
+    const { data: existing } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('email', email)
+      .single();
+
     if (existing) return res.status(400).json({ error: 'Email already exists' });
 
     const hashed = bcrypt.hashSync(password, 10);
     const uuid = require('uuid').v4();
 
-    await new Promise((resolve, reject) => {
-      db.run(
-        'INSERT INTO user_profiles (user_uuid, email, password_hash, full_name, grade_level, role) VALUES (?, ?, ?, ?, ?, ?)',
-        [uuid, email, hashed, full_name, grade_level || '初中1', 'student'],
-        (err) => {
-          if (err) reject(err);
-          resolve();
-        }
-      );
-    });
+    const { error } = await supabase
+      .from('user_profiles')
+      .insert({
+        user_uuid: uuid,
+        email,
+        password_hash: hashed,
+        full_name,
+        grade_level: grade_level || '初中1',
+        role: 'student'
+      });
+
+    if (error) throw error;
 
     const user = { id: uuid, email, full_name, grade_level, role: 'student' };
     const token = jwt.sign(user, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
     res.json({ user, token });
   } catch (error) {
+    console.error('Registration error:', error);
     res.status(500).json({ error: 'Registration failed' });
   }
 });
@@ -45,20 +48,15 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   console.log('Login attempt for email:', email);
-  const db = getDatabase();
+  const supabase = getDatabase();
   try {
     console.log('Querying database for user');
-    const user = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM user_profiles WHERE email = ?', [email], (err, row) => {
-        if (err) {
-          console.log('Database query error:', err);
-          reject(err);
-        } else {
-          console.log('User row retrieved:', row ? 'found' : 'not found');
-          resolve(row);
-        }
-      });
-    });
+    const { data: user } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('email', email)
+      .single();
+
     if (!user) {
       console.log('No user found');
       return res.status(401).json({ error: 'Invalid credentials' });

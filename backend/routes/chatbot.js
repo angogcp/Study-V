@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 
-const { getDatabase } = require('../database/connection');
+const { supabase } = require('../database/connection');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
 const fs = require('fs');
@@ -90,16 +90,21 @@ async function generateLLMResponse(message, image, userId, videoId) {
   try {
     let videoContext = null;
     let contextMarkdown = '';
-    const db = getDatabase();
     if (videoId) {
-      videoContext = await new Promise((resolve) => {
-        db.get('SELECT v.title, v.title_chinese, v.description, v.grade_level, v.chapter, s.name_chinese as subject FROM videos v LEFT JOIN subjects s ON v.subject_id = s.id WHERE v.youtube_id = ?', [videoId], (err, row) => {
-          if (err) console.error('Database query error:', err);
-          resolve(row);
-        });
-      });
+      const { data: row, error } = await supabase
+        .from('videos')
+        .select('title, title_chinese, description, grade_level, chapter, subjects(name_chinese:subject)')
+        .eq('youtube_id', videoId)
+        .single();
+
+      if (error) {
+        console.error('Supabase query error:', error);
+      } else {
+        videoContext = row;
+      }
+
       if (videoContext) {
-        contextMarkdown = `# Video Context\n\nTitle: ${videoContext.title_chinese || videoContext.title}\nDescription: ${videoContext.description || 'No description'}\nSubject: ${videoContext.subject || 'Unknown'}\nGrade: ${videoContext.grade_level || 'Unknown'}\nChapter: ${videoContext.chapter || 'Unknown'}`;
+        contextMarkdown = `# Video Context\n\nTitle: ${videoContext.title_chinese || videoContext.title}\nDescription: ${videoContext.description || 'No description'}\nSubject: ${videoContext.subjects?.name_chinese || 'Unknown'}\nGrade: ${videoContext.grade_level || 'Unknown'}\nChapter: ${videoContext.chapter || 'Unknown'}`;
       }
     }
     // Comment out OCR for now
@@ -145,7 +150,7 @@ function generateFallbackResponse(message) {
   if (message.includes('?') || message.includes('？')) {
     // If user asks a question, guide them to think through it
     const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
-    return `我理解你的问题。让我们一起思考：${randomPrompt}`;
+    return `我理解你的问题。together think：${randomPrompt}`;
   } else if (message.length < 20) {
     // For short messages, we'll still provide fallback responses when LLM fails
     const shortResponses = [
@@ -169,46 +174,26 @@ function generateFallbackResponse(message) {
 }
 
 // Save chat message to database
-function saveChatMessage(userId, message, isFromUser) {
-  const db = getDatabase();
+async function saveChatMessage(userId, message, isFromUser) {
   const messageId = uuidv4();
   const timestamp = new Date().toISOString();
   
-  db.run(
-    `INSERT INTO chat_messages (message_id, user_id, content, is_from_user, created_at) 
-     VALUES (?, ?, ?, ?, ?)`,
-    [messageId, userId, message, isFromUser ? 1 : 0, timestamp],
-    (err) => {
-      if (err) {
-        console.error('Error saving chat message:', err);
-      }
-    }
-  );
-  
+  const { error } = await supabase
+    .from('chat_messages')
+    .insert({
+      message_id: messageId,
+      user_id: userId,
+      content: message,
+      is_from_user: isFromUser,
+      created_at: timestamp
+    });
+
+  if (error) {
+    console.error('Error saving chat message:', error);
+  }
 }
 
-// Create chat_messages table if it doesn't exist
-function ensureChatMessagesTable() {
-  const db = getDatabase();
-  
-  db.run(`
-    CREATE TABLE IF NOT EXISTS chat_messages (
-      message_id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      content TEXT NOT NULL,
-      is_from_user INTEGER NOT NULL,
-      created_at TEXT NOT NULL
-    )
-  `, (err) => {
-    if (err) {
-      console.error('Error creating chat_messages table:', err);
-    }
-  });
-  
-}
-
-// Ensure table exists when module is loaded
-ensureChatMessagesTable();
+// Remove ensureChatMessagesTable since table is created in Supabase
 
 // Add middleware to handle guest user for routes that require authentication
 router.use((req, res, next) => {
@@ -239,7 +224,7 @@ router.post('/message', async (req, res) => {
   
   // Save user message or image
   const contentToSave = image ? JSON.stringify({ type: 'image', content: image }) : message;
-  saveChatMessage(effectiveUserId, contentToSave, true);
+  await saveChatMessage(effectiveUserId, contentToSave, true);
   
   let effectiveMessage = message || '';
   
@@ -252,16 +237,21 @@ router.post('/message', async (req, res) => {
     try {
       let videoContext = null;
       let contextMarkdown = '';
-      const db = getDatabase();
       if (videoId) {
-        videoContext = await new Promise((resolve) => {
-          db.get('SELECT v.title, v.title_chinese, v.description, v.grade_level, v.chapter, s.name_chinese as subject FROM videos v LEFT JOIN subjects s ON v.subject_id = s.id WHERE v.youtube_id = ?', [videoId], (err, row) => {
-            if (err) console.error('Database query error:', err);
-            resolve(row);
-          });
-        });
+        const { data: row, error } = await supabase
+          .from('videos')
+          .select('title, title_chinese, description, grade_level, chapter, subjects(name_chinese:subject)')
+          .eq('youtube_id', videoId)
+          .single();
+
+        if (error) {
+          console.error('Supabase query error:', error);
+        } else {
+          videoContext = row;
+        }
+
         if (videoContext) {
-          contextMarkdown = `# Video Context\n\nTitle: ${videoContext.title_chinese || videoContext.title}\nDescription: ${videoContext.description || 'No description'}\nSubject: ${videoContext.subject || 'Unknown'}\nGrade: ${videoContext.grade_level || 'Unknown'}\nChapter: ${videoContext.chapter || 'Unknown'}`;
+          contextMarkdown = `# Video Context\n\nTitle: ${videoContext.title_chinese || videoContext.title}\nDescription: ${videoContext.description || 'No description'}\nSubject: ${videoContext.subjects?.name_chinese || 'Unknown'}\nGrade: ${videoContext.grade_level || 'Unknown'}\nChapter: ${videoContext.chapter || 'Unknown'}`;
         }
       }
       
@@ -299,7 +289,7 @@ router.post('/message', async (req, res) => {
       };
     }
     
-    saveChatMessage(effectiveUserId, result.llmResponse, false);
+    await saveChatMessage(effectiveUserId, result.llmResponse, false);
     
     res.json({ 
       message: result.llmResponse,
@@ -313,31 +303,30 @@ router.post('/message', async (req, res) => {
 });
 
 // Get chat history
-router.get('/history', (req, res) => {
-  const db = getDatabase();
+router.get('/history', async (req, res) => {
   const userId = req.user.id;
   
-  db.all(
-    `SELECT message_id as id, content, is_from_user, created_at 
-     FROM chat_messages 
-     WHERE user_id = ? 
-     ORDER BY created_at ASC`,
-    [userId],
-    (err, messages) => {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to retrieve chat history' });
-      }
-      
-      const formattedMessages = messages.map(msg => ({
-        id: msg.id,
-        content: msg.content,
-        sender: msg.is_from_user ? 'user' : 'bot',
-        timestamp: msg.created_at
-      }));
-      
-      res.json({ messages: formattedMessages });
-    }
-  );
+  try {
+    const { data: messages, error } = await supabase
+      .from('chat_messages')
+      .select('message_id:id, content, is_from_user, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    
+    const formattedMessages = messages.map(msg => ({
+      id: msg.id,
+      content: msg.content,
+      sender: msg.is_from_user ? 'user' : 'bot',
+      timestamp: msg.created_at
+    }));
+    
+    res.json({ messages: formattedMessages });
+  } catch (error) {
+    console.error('Error retrieving chat history:', error);
+    res.status(500).json({ error: 'Failed to retrieve chat history' });
+  }
 });
 
 // Import puppeteer for screenshot functionality

@@ -5,128 +5,130 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
 
 // Get all subjects
-router.get('/', (req, res) => {
-  const db = getDatabase();
+router.get('/', async (req, res) => {
+  const supabase = getDatabase();
 
-  db.all(
-    `SELECT * FROM subjects WHERE is_active = 1 ORDER BY sort_order, name_chinese`,
-    [],
-    (err, subjects) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      res.json(subjects);
-    }
-  );
+  const { data, error } = await supabase
+    .from('subjects')
+    .select('*')
+    .eq('is_active', 1)
+    .order('sort_order')
+    .order('name_chinese');
+
+  if (error) {
+    console.error('Supabase error in get all subjects:', JSON.stringify(error, null, 2));
+    return res.status(500).json({ error: 'Database error' });
+  }
+  res.json(data);
 });
 
 // Get subject by ID
-router.get('/:id', (req, res) => {
-  const db = getDatabase();
+router.get('/:id', async (req, res) => {
+  const supabase = getDatabase();
   
-  db.get(
-    `SELECT * FROM subjects WHERE id = ? AND is_active = 1`,
-    [req.params.id],
-    (err, subject) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      
-      if (!subject) {
-        return res.status(404).json({ error: 'Subject not found' });
-      }
-      
-      res.json(subject);
-    }
-  );
+  const { data, error } = await supabase
+    .from('subjects')
+    .select('*')
+    .eq('id', req.params.id)
+    .eq('is_active', 1)
+    .single();
+
+  if (error) {
+    return res.status(500).json({ error: 'Database error' });
+  }
+  
+  if (!data) {
+    return res.status(404).json({ error: 'Subject not found' });
+  }
+  
+  res.json(data);
 });
 
 // Create new subject (admin only)
-router.post('/', (req, res) => {
-  const { name, nameChinese, description, iconUrl, colorCode, sortOrder } = req.body;
+router.post('/', async (req, res) => {
+  const { name, name_chinese, description, icon_url, color_code, sort_order } = req.body;
 
-  if (!name || !nameChinese) {
+  if (!name || !name_chinese) {
     return res.status(400).json({ error: 'Name and Chinese name are required' });
   }
 
-  const db = getDatabase();
+  const supabase = getDatabase();
 
-  db.run(
-    `INSERT INTO subjects (name, name_chinese, description, icon_url, color_code, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
-    [name, nameChinese, description, iconUrl, colorCode || '#3B82F6', sortOrder || 0],
-    function(err) {
-      if (err) {
-        if (err.message.includes('UNIQUE constraint failed')) {
-          return res.status(400).json({ error: 'Subject name already exists' });
-        }
-        return res.status(500).json({ error: 'Failed to create subject' });
-      }
+  const { data, error } = await supabase
+    .from('subjects')
+    .insert({
+      name,
+      name_chinese,
+      description,
+      icon_url,
+      color_code: color_code || '#3B82F6',
+      sort_order: sort_order || 0
+    })
+    .select();
 
-      res.json({
-        id: this.lastID,
-        name,
-        nameChinese,
-        description,
-        iconUrl,
-        colorCode: colorCode || '#3B82F6',
-        sortOrder: sortOrder || 0,
-        message: 'Subject created successfully'
-      });
+  if (error) {
+    if (error.code === '23505') { // PostgreSQL unique violation
+      return res.status(400).json({ error: 'Subject name already exists' });
     }
-  );
+    return res.status(500).json({ error: 'Failed to create subject' });
+  }
+
+  res.json({
+    ...data[0],
+    message: 'Subject created successfully'
+  });
 });
 
 // Update subject (admin only)
-router.put('/:id', (req, res) => {
-  const { name, nameChinese, description, iconUrl, colorCode, sortOrder, isActive } = req.body;
+router.put('/:id', async (req, res) => {
+  const { name, name_chinese, description, icon_url, color_code, sort_order, is_active } = req.body;
   const subjectId = req.params.id;
 
-  const db = getDatabase();
+  const updateData = {};
+  if (name !== undefined) updateData.name = name;
+  if (name_chinese !== undefined) updateData.name_chinese = name_chinese;
+  if (description !== undefined) updateData.description = description;
+  if (icon_url !== undefined) updateData.icon_url = icon_url;
+  if (color_code !== undefined) updateData.color_code = color_code;
+  if (sort_order !== undefined) updateData.sort_order = sort_order;
+  if (is_active !== undefined) updateData.is_active = is_active;
 
-  db.run(
-    `UPDATE subjects SET 
-     name = COALESCE(?, name),
-     name_chinese = COALESCE(?, name_chinese),
-     description = COALESCE(?, description),
-     icon_url = COALESCE(?, icon_url),
-     color_code = COALESCE(?, color_code),
-     sort_order = COALESCE(?, sort_order),
-     is_active = COALESCE(?, is_active)
-     WHERE id = ?`,
-    [name, nameChinese, description, iconUrl, colorCode, sortOrder, isActive, subjectId],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to update subject' });
-      }
+  const supabase = getDatabase();
 
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Subject not found' });
-      }
+  const { error, count } = await supabase
+    .from('subjects')
+    .update(updateData)
+    .eq('id', subjectId);
 
-      res.json({ message: 'Subject updated successfully' });
-    }
-  );
+  if (error) {
+    return res.status(500).json({ error: 'Failed to update subject' });
+  }
+
+  if (count === 0) {
+    return res.status(404).json({ error: 'Subject not found' });
+  }
+
+  res.json({ message: 'Subject updated successfully' });
 });
 
 // Delete subject (admin only)
-router.delete('/:id', (req, res) => {
-  const db = getDatabase();
+router.delete('/:id', async (req, res) => {
+  const supabase = getDatabase();
 
-  db.run(
-    `UPDATE subjects SET is_active = 0 WHERE id = ?`,
-    [req.params.id],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to delete subject' });
-      }
+  const { error, count } = await supabase
+    .from('subjects')
+    .update({ is_active: 0 })
+    .eq('id', req.params.id);
 
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Subject not found' });
-      }
+  if (error) {
+    return res.status(500).json({ error: 'Failed to delete subject' });
+  }
 
-      res.json({ message: 'Subject deleted successfully' });
-    }
-  );
+  if (count === 0) {
+    return res.status(404).json({ error: 'Subject not found' });
+  }
+
+  res.json({ message: 'Subject deleted successfully' });
 });
 
 module.exports = router;

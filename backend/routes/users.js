@@ -7,155 +7,161 @@ const { authenticateToken, isAdmin } = require('../middleware/auth');
 
 // Get all users with pagination and search
 router.get('/', authenticateToken, isAdmin, async (req, res) => {
+  const supabase = getDatabase();
   const { search, page = 1, limit = 10 } = req.query;
-  const db = getDatabase();
   try {
-    let countQuery = 'SELECT COUNT(*) as totalCount FROM user_profiles';
-    let countParams = [];
+    let query = supabase.from('user_profiles').select('user_uuid:id, email, full_name, grade_level, role, created_at', { count: 'exact' });
+
     if (search) {
-      countQuery += ' WHERE email LIKE ? OR full_name LIKE ?';
-      countParams = [`%${search}%`, `%${search}%`];
+      query = query.or(`email.ilike.%${search}%,full_name.ilike.%${search}%`);
     }
-    const { totalCount } = await new Promise((resolve, reject) => {
-      db.get(countQuery, countParams, (err, row) => {
-        if (err) reject(err);
-        resolve(row);
-      });
-    });
+
+    query = query.range((page - 1) * limit, page * limit - 1).order('created_at', { ascending: false });
+
+    const { data: users, count: totalCount, error } = await query;
+
+    if (error) throw error;
+
+    // Transform the data to match the expected format in the frontend
+    const transformedUsers = users.map(user => ({
+      id: user.id,
+      email: user.email,
+      fullName: user.full_name,
+      gradeLevel: user.grade_level,
+      role: user.role,
+      created_at: user.created_at
+    }));
 
     const totalPages = Math.ceil(totalCount / limit);
 
-    let query = 'SELECT user_uuid as id, email, full_name as fullName, grade_level as gradeLevel, role, created_at FROM user_profiles';
-    let params = [];
-    if (search) {
-      query += ' WHERE email LIKE ? OR full_name LIKE ?';
-      params = [`%${search}%`, `%${search}%`];
-    }
-    query += ' LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
-
-    const users = await new Promise((resolve, reject) => {
-      db.all(query, params, (err, rows) => {
-        if (err) reject(err);
-        resolve(rows);
-      });
-    });
-
-    res.json({ users, totalPages, totalCount });
+    res.json({ users: transformedUsers, totalPages, totalCount });
   } catch (error) {
+    console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
 
 // Get user by ID
 router.get('/:id', authenticateToken, isAdmin, async (req, res) => {
-  const db = getDatabase();
+  const supabase = getDatabase();
   try {
-    const user = await new Promise((resolve, reject) => {
-      db.get('SELECT user_uuid as id, email, full_name as fullName, grade_level as gradeLevel, role, created_at FROM user_profiles WHERE user_uuid = ?', [req.params.id], (err, row) => {
-        if (err) reject(err);
-        resolve(row);
-      });
-    });
+    const { data: user, error } = await supabase
+      .from('user_profiles')
+      .select('user_uuid:id, email, full_name, grade_level, role, created_at')
+      .eq('user_uuid', req.params.id)
+      .single();
+
+    if (error) throw error;
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+
+    // Transform to match expected format
+    const transformedUser = {
+      id: user.id,
+      email: user.email,
+      fullName: user.full_name,
+      gradeLevel: user.grade_level,
+      role: user.role,
+      created_at: user.created_at
+    };
+
+    res.json(transformedUser);
   } catch (error) {
+    console.error('Error fetching user:', error);
     res.status(500).json({ error: 'Failed to fetch user' });
   }
 });
 
 // Create new user
 router.post('/', authenticateToken, isAdmin, async (req, res) => {
+  const supabase = getDatabase();
   const { email, password, fullName, gradeLevel, role } = req.body;
-  const db = getDatabase();
+  console.log('Received create user body:', req.body);
   try {
-    const existing = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM user_profiles WHERE email = ?', [email], (err, row) => {
-        if (err) reject(err);
-        resolve(row);
-      });
-    });
+    const { data: existing, error: checkError } = await supabase
+      .from('user_profiles')
+      .select('user_uuid')
+      .eq('email', email)
+      .single();
+
+    if (checkError && checkError.code !== 'PGRST116') throw checkError;
     if (existing) return res.status(400).json({ error: 'Email already exists' });
 
     const hashed = bcrypt.hashSync(password, 10);
     const id = uuidv4();
 
-    await new Promise((resolve, reject) => {
-      db.run(
-        'INSERT INTO user_profiles (user_uuid, email, password_hash, full_name, grade_level, role) VALUES (?, ?, ?, ?, ?, ?)',
-        [id, email, hashed, fullName, gradeLevel || '初中1', role || 'student'],
-        (err) => {
-          if (err) reject(err);
-          resolve();
-        }
-      );
-    });
+    const { data: newUser, error } = await supabase
+      .from('user_profiles')
+      .insert({
+        user_uuid: id,
+        email,
+        password_hash: hashed,
+        full_name: fullName,
+        grade_level: gradeLevel || '初中1',
+        role: role || 'student'
+      })
+      .select('user_uuid:id, email, full_name, grade_level, role')
+      .single();
 
-    const newUser = { id, email, fullName, gradeLevel, role };
-    res.status(201).json(newUser);
+    if (error) throw error;
+
+    // Transform to match expected format
+    const transformedUser = {
+      id: newUser.id,
+      email: newUser.email,
+      fullName: newUser.full_name,
+      gradeLevel: newUser.grade_level,
+      role: newUser.role
+    };
+
+    res.status(201).json(transformedUser);
   } catch (error) {
+    console.error('Error creating user:', error);
     res.status(500).json({ error: 'Failed to create user' });
   }
 });
 
 // Update user
 router.put('/:id', authenticateToken, isAdmin, async (req, res) => {
+  const supabase = getDatabase();
   const { email, password, fullName, gradeLevel, role } = req.body;
-  const db = getDatabase();
   try {
-    const updates = [];
-    const params = [];
-    if (email) {
-      updates.push('email = ?');
-      params.push(email);
-    }
-    if (password) {
-      const hashed = bcrypt.hashSync(password, 10);
-      updates.push('password_hash = ?');
-      params.push(hashed);
-    }
-    if (fullName) {
-      updates.push('full_name = ?');
-      params.push(fullName);
-    }
-    if (gradeLevel) {
-      updates.push('grade_level = ?');
-      params.push(gradeLevel);
-    }
-    if (role) {
-      updates.push('role = ?');
-      params.push(role);
-    }
-    if (updates.length === 0) return res.status(400).json({ error: 'No updates provided' });
+    const updates = {};
+    if (email) updates.email = email;
+    if (password) updates.password_hash = bcrypt.hashSync(password, 10);
+    if (fullName) updates.full_name = fullName;
+    if (gradeLevel) updates.grade_level = gradeLevel;
+    if (role) updates.role = role;
 
-    const query = `UPDATE user_profiles SET ${updates.join(', ')} WHERE user_uuid = ?`;
-    params.push(req.params.id);
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No updates provided' });
 
-    await new Promise((resolve, reject) => {
-      db.run(query, params, (err) => {
-        if (err) reject(err);
-        resolve();
-      });
-    });
+    const { error } = await supabase
+      .from('user_profiles')
+      .update(updates)
+      .eq('user_uuid', req.params.id);
+
+    if (error) throw error;
 
     res.json({ message: 'User updated successfully' });
   } catch (error) {
+    console.error('Error updating user:', error);
     res.status(500).json({ error: 'Failed to update user' });
   }
 });
 
 // Delete user
 router.delete('/:id', authenticateToken, isAdmin, async (req, res) => {
-  const db = getDatabase();
+  const supabase = getDatabase();
   try {
-    await new Promise((resolve, reject) => {
-      db.run('DELETE FROM user_profiles WHERE user_uuid = ?', [req.params.id], (err) => {
-        if (err) reject(err);
-        resolve();
-      });
-    });
+    const { error } = await supabase
+      .from('user_profiles')
+      .delete()
+      .eq('user_uuid', req.params.id);
+
+    if (error) throw error;
+
     res.json({ message: 'User deleted successfully' });
   } catch (error) {
+    console.error('Error deleting user:', error);
     res.status(500).json({ error: 'Failed to delete user' });
   }
 });

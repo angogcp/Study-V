@@ -18,89 +18,101 @@ router.use((req, res, next) => {
 });
 
 // Get user's progress for a specific video
-router.get('/video/:videoId', (req, res) => {
-  const db = getDatabase();
+router.get('/video/:videoId', async (req, res) => {
+  const supabase = getDatabase();
   
-  db.get(
-    `SELECT * FROM video_progress WHERE user_id = ? AND video_id = ?`,
-    [req.user.id, req.params.videoId],
-    (err, progress) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      
-      if (!progress) {
-        return res.json({
-          userId: req.user.id,
-          videoId: parseInt(req.params.videoId),
-          watchTimeSeconds: 0,
-          progressPercentage: 0,
-          isCompleted: false,
-          lastPosition: 0
-        });
-      }
-      
-      res.json(progress);
+  try {
+    const { data: progress, error } = await supabase
+      .from('video_progress')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .eq('video_id', req.params.videoId)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') throw error; // Ignore not found error
+    
+    if (!progress) {
+      return res.json({
+        userId: req.user.id,
+        videoId: parseInt(req.params.videoId),
+        watchTimeSeconds: 0,
+        progressPercentage: 0,
+        isCompleted: false,
+        lastPosition: 0
+      });
     }
-  );
+    
+    res.json(progress);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Get all user's video progress with optional filters
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { completed, subject_id, grade_level, page = 1, limit = 20 } = req.query;
   const offset = (page - 1) * limit;
   
-  let query = `
-    SELECT vp.*, v.title, v.title_chinese, v.thumbnail_url, v.duration, 
-           s.name as subject_name, s.name_chinese as subject_name_chinese
-    FROM video_progress vp
-    JOIN videos v ON vp.video_id = v.id
-    JOIN subjects s ON v.subject_id = s.id
-    WHERE vp.user_id = ?
-  `;
-  let params = [req.user.id];
-
-  if (completed !== undefined) {
-    query += ` AND vp.is_completed = ?`;
-    params.push(completed === 'true' ? 1 : 0);
-  }
-
-  if (subject_id) {
-    query += ` AND v.subject_id = ?`;
-    params.push(subject_id);
-  }
-
-  if (grade_level) {
-    query += ` AND v.grade_level = ?`;
-    params.push(grade_level);
-  }
-
-  query += ` ORDER BY vp.last_watched_at DESC LIMIT ? OFFSET ?`;
-  params.push(parseInt(limit), parseInt(offset));
-
-  const db = getDatabase();
-
-  db.all(query, params, (err, progressList) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
+  const supabase = getDatabase();
+  
+  try {
+    let query = supabase
+      .from('video_progress')
+      .select('*, videos!video_progress_video_id_fkey(title, title_chinese, thumbnail_url, duration, subjects(name:subject_name, name_chinese:subject_name_chinese))')
+      .eq('user_id', req.user.id);
+    
+    if (completed !== undefined) {
+      query = query.eq('is_completed', completed === 'true');
     }
-
+    
+    if (subject_id) {
+      query = query.eq('videos.subject_id', subject_id);
+    }
+    
+    if (grade_level) {
+      query = query.eq('videos.grade_level', grade_level);
+    }
+    
+    const { data: progressList, error } = await query
+      .order('last_watched_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+    
+    if (error) throw error;
+    
+    // Get total count
+    let countQuery = supabase
+      .from('video_progress')
+      .select('count(*)', { count: 'exact', head: true })
+      .eq('user_id', req.user.id);
+    
+    if (completed !== undefined) countQuery = countQuery.eq('is_completed', completed === 'true');
+    if (subject_id) countQuery = countQuery.eq('videos.subject_id', subject_id);
+    if (grade_level) countQuery = countQuery.eq('videos.grade_level', grade_level);
+    
+    const { count } = await countQuery;
+    
     res.json({
       progress: progressList,
       pagination: {
         page: parseInt(page),
-        limit: parseInt(limit)
+        limit: parseInt(limit),
+        total: count,
+        pages: Math.ceil(count / limit)
       }
     });
-  });
-
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Update video progress
-router.post('/update', (req, res) => {
+router.post('/update', async (req, res) => {
   if (req.user.role === 'guest') {
     return res.status(403).json({ message: 'Guest users cannot update progress' });
   }
+  
   const {
     videoId,
     watchTimeSeconds,
@@ -114,196 +126,171 @@ router.post('/update', (req, res) => {
   }
 
   const progressPercentage = totalDuration > 0 ? (watchTimeSeconds / totalDuration) * 100 : 0;
-  const isCompleted = progressPercentage >= 90; // Consider 90% as completed
+  const isCompleted = progressPercentage >= 90;
 
-  const db = getDatabase();
-
-  // First check if progress record exists
-  db.get(
-    `SELECT id FROM video_progress WHERE user_id = ? AND video_id = ?`,
-    [req.user.id, videoId],
-    (err, existing) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
+  const supabase = getDatabase();
+  
+  try {
+    // Check if exists
+    const { data: existing, error: checkError } = await supabase
+      .from('video_progress')
+      .select('id')
+      .eq('user_id', req.user.id)
+      .eq('video_id', videoId)
+      .single();
+    
+    if (checkError && checkError.code !== 'PGRST116') throw checkError;
+    
+    const now = new Date().toISOString();
+    
+    if (existing) {
+      // Update
+      const updates = {
+        watch_time_seconds: watchTimeSeconds,
+        total_duration: totalDuration ?? supabase.raw('total_duration'),
+        progress_percentage: progressPercentage,
+        is_completed: isCompleted,
+        last_position: lastPosition ?? supabase.raw('last_position'),
+        bookmark_notes: bookmarkNotes ?? supabase.raw('bookmark_notes'),
+        last_watched_at: now,
+        completed_at: isCompleted && !existing.completed_at ? now : supabase.raw('completed_at')
+      };
+      
+      const { error: updateError } = await supabase
+        .from('video_progress')
+        .update(updates)
+        .eq('user_id', req.user.id)
+        .eq('video_id', videoId);
+      
+      if (updateError) throw updateError;
+      
+      if (isCompleted) {
+        await updateUserStats(req.user.id, supabase);
       }
-
-      const now = new Date().toISOString();
-
-      if (existing) {
-        // Update existing record
-        db.run(
-          `UPDATE video_progress SET 
-           watch_time_seconds = ?,
-           total_duration = COALESCE(?, total_duration),
-           progress_percentage = ?,
-           is_completed = ?,
-           last_position = COALESCE(?, last_position),
-           bookmark_notes = COALESCE(?, bookmark_notes),
-           last_watched_at = ?,
-           completed_at = CASE WHEN ? = 1 AND completed_at IS NULL THEN ? ELSE completed_at END
-           WHERE user_id = ? AND video_id = ?`,
-          [
-            watchTimeSeconds,
-            totalDuration,
-            progressPercentage,
-            isCompleted ? 1 : 0,
-            lastPosition,
-            bookmarkNotes,
-            now,
-            isCompleted ? 1 : 0,
-            now,
-            req.user.id,
-            videoId
-          ],
-          function(err) {
-            if (err) {
-              return res.status(500).json({ error: 'Failed to update progress' });
-            }
-
-            // Update user statistics if video was just completed
-            if (isCompleted) {
-              updateUserStats(req.user.id);
-            }
-
-            res.json({ message: 'Progress updated successfully' });
-          }
-        );
-      } else {
-        // Create new record
-        db.run(
-          `INSERT INTO video_progress (
-            user_id, video_id, watch_time_seconds, total_duration, 
-            progress_percentage, is_completed, last_position, bookmark_notes,
-            first_watched_at, last_watched_at, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            req.user.id,
-            videoId,
-            watchTimeSeconds,
-            totalDuration || 0,
-            progressPercentage,
-            isCompleted ? 1 : 0,
-            lastPosition || 0,
-            bookmarkNotes || null,
-            now,
-            now,
-            isCompleted ? now : null
-          ],
-          function(err) {
-            if (err) {
-              return res.status(500).json({ error: 'Failed to create progress record' });
-            }
-
-            // Update user statistics
-            updateUserStats(req.user.id);
-
-            res.json({ message: 'Progress recorded successfully' });
-          }
-        );
-      }
+      
+      res.json({ message: 'Progress updated successfully' });
+    } else {
+      // Insert
+      const { error: insertError } = await supabase
+        .from('video_progress')
+        .insert({
+          user_id: req.user.id,
+          video_id: videoId,
+          watch_time_seconds: watchTimeSeconds,
+          total_duration: totalDuration || 0,
+          progress_percentage: progressPercentage,
+          is_completed: isCompleted,
+          last_position: lastPosition || 0,
+          bookmark_notes: bookmarkNotes || null,
+          first_watched_at: now,
+          last_watched_at: now,
+          completed_at: isCompleted ? now : null
+        });
+      
+      if (insertError) throw insertError;
+      
+      await updateUserStats(req.user.id, supabase);
+      
+      res.json({ message: 'Progress recorded successfully' });
     }
-  );
-
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Helper function to update user statistics
-function updateUserStats(userId) {
-  const db = getDatabase();
-  
-  // Update total watch time and completed videos count
-  db.run(
-    `UPDATE user_profiles SET 
-     total_watch_time = (
-       SELECT COALESCE(SUM(watch_time_seconds), 0) 
-       FROM video_progress 
-       WHERE user_id = ?
-     ),
-     videos_completed = (
-       SELECT COUNT(*) 
-       FROM video_progress 
-       WHERE user_id = ? AND is_completed = 1
-     ),
-     updated_at = CURRENT_TIMESTAMP
-     WHERE user_uuid = ?`,
-    [userId, userId, userId],
-    (err) => {
-      if (err) {
-        console.error('Failed to update user statistics:', err);
-      }
-    }
-  );
-  
+async function updateUserStats(userId, supabase) {
+  try {
+    const { data: stats, error } = await supabase
+      .from('video_progress')
+      .select('watch_time_seconds, is_completed')
+      .eq('user_id', userId);
+    
+    if (error) throw error;
+    
+    const totalWatchTime = stats.reduce((sum, p) => sum + p.watch_time_seconds, 0);
+    const videosCompleted = stats.filter(p => p.is_completed).length;
+    
+    const { error: updateError } = await supabase
+      .from('user_profiles')
+      .update({
+        total_watch_time: totalWatchTime,
+        videos_completed: videosCompleted,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_uuid', userId);
+    
+    if (updateError) throw updateError;
+  } catch (error) {
+    console.error('Failed to update user statistics:', error);
+  }
 }
 
 // Get user learning statistics
-router.get('/stats', (req, res) => {
-  const db = getDatabase();
+router.get('/stats', async (req, res) => {
+  const supabase = getDatabase();
   
-  const queries = [
+  try {
     // Overall stats
-    `SELECT 
-       COUNT(*) as total_videos_watched,
-       COUNT(CASE WHEN is_completed = 1 THEN 1 END) as total_completed,
-       COALESCE(SUM(watch_time_seconds), 0) as total_watch_time,
-       COALESCE(AVG(progress_percentage), 0) as average_progress
-     FROM video_progress WHERE user_id = ?`,
+    const { data: overallData, error: overallError } = await supabase
+      .from('video_progress')
+      .select('watch_time_seconds, progress_percentage, is_completed')
+      .eq('user_id', req.user.id);
+    
+    if (overallError) throw overallError;
+    
+    const overallStats = {
+      total_videos_watched: overallData.length,
+      total_completed: overallData.filter(p => p.is_completed).length,
+      total_watch_time: overallData.reduce((sum, p) => sum + p.watch_time_seconds, 0),
+      average_progress: overallData.length > 0 ? overallData.reduce((sum, p) => sum + p.progress_percentage, 0) / overallData.length : 0
+    };
     
     // Progress by subject
-    `SELECT 
-       s.name_chinese as subject_name,
-       s.color_code,
-       COUNT(*) as videos_watched,
-       COUNT(CASE WHEN vp.is_completed = 1 THEN 1 END) as completed_count,
-       COALESCE(AVG(vp.progress_percentage), 0) as avg_progress
-     FROM video_progress vp
-     JOIN videos v ON vp.video_id = v.id
-     JOIN subjects s ON v.subject_id = s.id
-     WHERE vp.user_id = ?
-     GROUP BY s.id, s.name_chinese, s.color_code`,
+    const { data: subjectStats, error: subjectError } = await supabase
+      .from('video_progress')
+      .select('videos.subjects(name_chinese:subject_name, color_code), progress_percentage, is_completed')
+      .eq('user_id', req.user.id);
+    
+    if (subjectError) throw subjectError;
+    
+    const bySubject = subjectStats.reduce((acc, item) => {
+      const subject = item.videos.subjects.subject_name;
+      if (!acc[subject]) {
+        acc[subject] = {
+          subject_name: subject,
+          color_code: item.videos.subjects.color_code,
+          videos_watched: 0,
+          completed_count: 0,
+          avg_progress: 0
+        };
+      }
+      acc[subject].videos_watched++;
+      acc[subject].completed_count += item.is_completed ? 1 : 0;
+      acc[subject].avg_progress = (acc[subject].avg_progress * (acc[subject].videos_watched - 1) + item.progress_percentage) / acc[subject].videos_watched;
+      return acc;
+    }, {});
     
     // Recent activity
-    `SELECT 
-       v.title, v.title_chinese, v.thumbnail_url,
-       s.name_chinese as subject_name,
-       vp.progress_percentage, vp.is_completed, vp.last_watched_at
-     FROM video_progress vp
-     JOIN videos v ON vp.video_id = v.id
-     JOIN subjects s ON v.subject_id = s.id
-     WHERE vp.user_id = ?
-     ORDER BY vp.last_watched_at DESC
-     LIMIT 10`
-  ];
-  
-  const results = {};
-  
-  // Overall stats
-  db.get(queries[0], [req.user.id], (err, overallStats) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
+    const { data: recentActivity, error: recentError } = await supabase
+      .from('video_progress')
+      .select('videos(title, title_chinese, thumbnail_url, subjects(name_chinese:subject_name)), progress_percentage, is_completed, last_watched_at')
+      .eq('user_id', req.user.id)
+      .order('last_watched_at', { ascending: false })
+      .limit(10);
     
-    results.overall = overallStats;
+    if (recentError) throw recentError;
     
-    // Progress by subject
-    db.all(queries[1], [req.user.id], (err, subjectStats) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      
-      results.bySubject = subjectStats;
-      
-      // Recent activity
-      db.all(queries[2], [req.user.id], (err, recentActivity) => {
-        if (err) {
-          return res.status(500).json({ error: 'Database error' });
-        }
-        
-        results.recentActivity = recentActivity;
-        res.json(results);
-      });
+    res.json({
+      overall: overallStats,
+      bySubject: Object.values(bySubject),
+      recentActivity
     });
-  });
-  
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 module.exports = router;

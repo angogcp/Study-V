@@ -8,77 +8,57 @@ router.get('/', async (req, res) => {
   const { subject_id, grade_level, chapter, search, page = 1, limit = 20 } = req.query;
   const offset = (page - 1) * limit;
   
-  const db = getDatabase();
+  const supabase = getDatabase();
   
   try {
-    // Build WHERE clause
-    let whereClauses = ['v.is_active = 1'];
-    let params = [];
+    let query = supabase
+      .from('videos')
+      .select('*')
+      .eq('is_active', 1);
     
     if (subject_id) {
-      whereClauses.push('v.subject_id = ?');
-      params.push(subject_id);
+      query = query.eq('subject_id', subject_id);
     }
     
     if (grade_level) {
-      whereClauses.push('v.grade_level = ?');
-      params.push(grade_level);
+      query = query.eq('grade_level', grade_level);
     }
     
     if (chapter) {
-      whereClauses.push('v.chapter = ?');
-      params.push(chapter);
+      query = query.eq('chapter', chapter);
     }
     
     if (search) {
-      whereClauses.push('(LOWER(v.title) LIKE ? OR LOWER(v.title_chinese) LIKE ? OR LOWER(v.description) LIKE ? OR LOWER(v.topic) LIKE ?)');
-      const searchParam = `%${search.toLowerCase()}%`;
-      params.push(searchParam, searchParam, searchParam, searchParam);
+      const searchTerm = `%${search}%`;
+      query = query.or(`title.ilike.${searchTerm},title_chinese.ilike.${searchTerm},description.ilike.${searchTerm},topic.ilike.${searchTerm}`);
     }
     
-    const whereSql = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
+    // Get videos with pagination
+    const { data: videos, error } = await query
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
     
-    // Main query
-    const sql = `
-      SELECT v.*, 
-             s.name AS subject_name, 
-             s.name_chinese AS subject_name_chinese, 
-             s.color_code AS subject_color
-      FROM videos v
-      INNER JOIN subjects s ON v.subject_id = s.id
-      ${whereSql}
-      ORDER BY v.sort_order ASC, v.created_at DESC
-      LIMIT ? OFFSET ?
-    `;
-    
-    const queryParams = [...params, limit, offset];
-    
-    const videos = await new Promise((resolve, reject) => {
-      db.all(sql, queryParams, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
+    if (error) throw error;
 
-    // Replace thumbnail URLs to use hqdefault instead of maxresdefault
+    // Replace thumbnail URLs
     const modifiedVideos = videos.map(video => ({
       ...video,
       thumbnail_url: video.thumbnail_url?.replace('maxresdefault.jpg', 'hqdefault.jpg')
     }));
     
-    // Count query
-    const countSql = `
-      SELECT COUNT(*) as count
-      FROM videos v
-      ${whereSql}
-    `;
+    // Get total count
+    let countQuery = supabase.from('videos').select('count(*)', { count: 'exact', head: true }).eq('is_active', 1);
     
-    const count = await new Promise((resolve, reject) => {
-      db.get(countSql, params, (err, row) => {
-        if (err) reject(err);
-        else resolve(row.count);
-      });
-    });
+    if (subject_id) countQuery = countQuery.eq('subject_id', subject_id);
+    if (grade_level) countQuery = countQuery.eq('grade_level', grade_level);
+    if (chapter) countQuery = countQuery.eq('chapter', chapter);
+    if (search) {
+      const searchTerm = `%${search}%`;
+      countQuery = countQuery.or(`title.ilike.${searchTerm},title_chinese.ilike.${searchTerm},description.ilike.${searchTerm},topic.ilike.${searchTerm}`);
+    }
+    
+    const { count } = await countQuery;
     
     res.json({
       videos: modifiedVideos,
@@ -97,44 +77,32 @@ router.get('/', async (req, res) => {
 
 // Get single video by ID
 router.get('/:id', async (req, res) => {
-  const db = getDatabase();
+  const supabase = getDatabase();
   
   try {
-    const sql = `
-      SELECT v.*, 
-             s.name AS subject_name, 
-             s.name_chinese AS subject_name_chinese, 
-             s.color_code AS subject_color
-      FROM videos v
-      INNER JOIN subjects s ON v.subject_id = s.id
-      WHERE v.id = ? AND v.is_active = 1
-    `;
+    const { data: video, error } = await supabase
+      .from('videos')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('is_active', 1)
+      .single();
     
-    const video = await new Promise((resolve, reject) => {
-      db.get(sql, [req.params.id], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
+    if (error) throw error;
     
     if (!video) {
       return res.status(404).json({ error: 'Video not found' });
     }
     
-    // Replace thumbnail URL to use hqdefault instead of maxresdefault
+    // Replace thumbnail URL
     video.thumbnail_url = video.thumbnail_url?.replace('maxresdefault.jpg', 'hqdefault.jpg');
     
     // Increment view count
-    await new Promise((resolve, reject) => {
-      db.run(
-        'UPDATE videos SET view_count = view_count + 1 WHERE id = ?',
-        [req.params.id],
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
-    });
+    const { error: updateError } = await supabase
+      .from('videos')
+      .update({ view_count: supabase.raw('view_count + 1') })
+      .eq('id', req.params.id);
+    
+    if (updateError) throw updateError;
     
     res.json(video);
   } catch (error) {

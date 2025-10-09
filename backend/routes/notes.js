@@ -21,7 +21,7 @@ router.use((req, res, next) => {
 });
 
 // Get all notes for a user with optional filters
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { video_id, search, page = 1, limit = 20 } = req.query;
   const offset = (page - 1) * limit;
   
@@ -37,119 +37,107 @@ router.get('/', (req, res) => {
     });
   }
   
-  let query = `
-    SELECT n.*, v.title as video_title, v.title_chinese as video_title_chinese,
-           v.thumbnail_url, s.name_chinese as subject_name
-    FROM user_notes n
-    JOIN videos v ON n.video_id = v.id
-    JOIN subjects s ON v.subject_id = s.id
-    WHERE n.user_id = ?
-  `;
-  let params = [req.user.id];
-
-  if (video_id) {
-    query += ` AND n.video_id = ?`;
-    params.push(video_id);
-  }
-
-  if (search) {
-    query += ` AND (n.title LIKE ? OR n.content LIKE ?)`;
-    const searchParam = `%${search}%`;
-    params.push(searchParam, searchParam);
-  }
-
-  query += ` ORDER BY n.updated_at DESC LIMIT ? OFFSET ?`;
-  params.push(parseInt(limit), parseInt(offset));
-
-  const db = getDatabase();
-
-  db.all(query, params, (err, notes) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-
-    // Get total count
-    let countQuery = `SELECT COUNT(*) as total FROM user_notes WHERE user_id = ?`;
-    let countParams = [req.user.id];
+  const supabase = getDatabase();
+  
+  try {
+    let query = supabase
+      .from('user_notes')
+      .select('*, videos!user_notes_video_id_fkey(title:video_title, title_chinese:video_title_chinese, subjects(name_chinese:subject_name))')
+      .eq('user_id', req.user.id);
     
     if (video_id) {
-      countQuery += ` AND video_id = ?`;
-      countParams.push(video_id);
+      query = query.eq('video_id', video_id);
     }
     
     if (search) {
-      countQuery += ` AND (title LIKE ? OR content LIKE ?)`;
-      const searchParam = `%${search}%`;
-      countParams.push(searchParam, searchParam);
+      const searchTerm = `%${search}%`;
+      query = query.or(`title.ilike.${searchTerm},content.ilike.${searchTerm}`);
     }
-
-    db.get(countQuery, countParams, (err, countResult) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
+    
+    const { data: notes, error } = await query
+      .order('updated_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+    
+    if (error) throw error;
+    
+    // Get total count
+    let countQuery = supabase
+      .from('user_notes')
+      .select('count(*)', { count: 'exact', head: true })
+      .eq('user_id', req.user.id);
+    
+    if (video_id) countQuery = countQuery.eq('video_id', video_id);
+    if (search) {
+      const searchTerm = `%${search}%`;
+      countQuery = countQuery.or(`title.ilike.${searchTerm},content.ilike.${searchTerm}`);
+    }
+    
+    const { count } = await countQuery;
+    
+    res.json({
+      notes,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: count,
+        pages: Math.ceil(count / limit)
       }
-
-      res.json({
-        notes,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total: countResult.total,
-          pages: Math.ceil(countResult.total / limit)
-        }
-      });
     });
-  });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Get notes for a specific video
-router.get('/video/:videoId', (req, res) => {
-  const db = getDatabase();
+router.get('/video/:videoId', async (req, res) => {
+  const supabase = getDatabase();
   
-  db.all(
-    `SELECT n.*, v.title as video_title, v.title_chinese as video_title_chinese
-     FROM user_notes n
-     JOIN videos v ON n.video_id = v.id
-     WHERE n.user_id = ? AND n.video_id = ?
-     ORDER BY n.timestamp_seconds ASC, n.created_at ASC`,
-    [req.user.id, req.params.videoId],
-    (err, notes) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      
-      res.json(notes);
-    }
-  );
+  try {
+    const { data: notes, error } = await supabase
+      .from('user_notes')
+      .select('*, videos!user_notes_video_id_fkey(title:video_title, title_chinese:video_title_chinese)')
+      .eq('user_id', req.user.id)
+      .eq('video_id', req.params.videoId)
+      .order('timestamp_seconds', { ascending: true })
+      .order('created_at', { ascending: true });
+    
+    if (error) throw error;
+    
+    res.json(notes);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Get single note by ID
-router.get('/:id', (req, res) => {
-  const db = getDatabase();
+router.get('/:id', async (req, res) => {
+  const supabase = getDatabase();
   
-  db.get(
-    `SELECT n.*, v.title as video_title, v.title_chinese as video_title_chinese,
-            v.thumbnail_url, s.name_chinese as subject_name
-     FROM user_notes n
-     JOIN videos v ON n.video_id = v.id
-     JOIN subjects s ON v.subject_id = s.id
-     WHERE n.id = ? AND n.user_id = ?`,
-    [req.params.id, req.user.id],
-    (err, note) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      
-      if (!note) {
-        return res.status(404).json({ error: 'Note not found' });
-      }
-      
-      res.json(note);
+  try {
+    const { data: note, error } = await supabase
+      .from('user_notes')
+      .select('*, videos!user_notes_video_id_fkey(title:video_title, title_chinese:video_title_chinese, thumbnail_url, subjects(name_chinese:subject_name))')
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id)
+      .single();
+    
+    if (error) throw error;
+    
+    if (!note) {
+      return res.status(404).json({ error: 'Note not found' });
     }
-  );
+    
+    res.json(note);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Create new note
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const {
     videoId,
     title = 'Untitled Note',
@@ -164,41 +152,40 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Video ID and content are required' });
   }
 
-  const db = getDatabase();
-
-  db.run(
-    `INSERT INTO user_notes (
-      user_id, video_id, title, content, content_html, 
-      timestamp_seconds, is_private, tags
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      req.user.id,
-      videoId,
-      title,
-      content,
-      contentHtml || '',
-      timestampSeconds,
-      isPrivate ? 1 : 0,
-      Array.isArray(tags) ? tags.join(',') : tags
-    ],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to create note' });
-      }
-
-      // Update user notes count
-      updateUserNotesCount(req.user.id);
-
-      res.json({
-        id: this.lastID,
-        message: 'Note created successfully'
-      });
-    }
-  );
+  const supabase = getDatabase();
+  
+  try {
+    const { data, error } = await supabase
+      .from('user_notes')
+      .insert({
+        user_id: req.user.id,
+        video_id: videoId,
+        title,
+        content,
+        content_html: contentHtml || '',
+        timestamp_seconds: timestampSeconds,
+        is_private: isPrivate,
+        tags: Array.isArray(tags) ? tags.join(',') : tags
+      })
+      .select('id')
+      .single();
+    
+    if (error) throw error;
+    
+    await updateUserNotesCount(req.user.id, supabase);
+    
+    res.json({
+      id: data.id,
+      message: 'Note created successfully'
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to create note' });
+  }
 });
 
 // Update note
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   const {
     title,
     content,
@@ -209,64 +196,59 @@ router.put('/:id', (req, res) => {
   } = req.body;
 
   const noteId = req.params.id;
-  const db = getDatabase();
-
-  db.run(
-    `UPDATE user_notes SET 
-     title = COALESCE(?, title),
-     content = COALESCE(?, content),
-     content_html = COALESCE(?, content_html),
-     timestamp_seconds = COALESCE(?, timestamp_seconds),
-     is_private = COALESCE(?, is_private),
-     tags = COALESCE(?, tags),
-     updated_at = CURRENT_TIMESTAMP
-     WHERE id = ? AND user_id = ?`,
-    [
-      title,
-      content,
-      contentHtml,
-      timestampSeconds,
-      isPrivate !== undefined ? (isPrivate ? 1 : 0) : undefined,
-      Array.isArray(tags) ? tags.join(',') : tags,
-      noteId,
-      req.user.id
-    ],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to update note' });
-      }
-
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Note not found' });
-      }
-
-      res.json({ message: 'Note updated successfully' });
+  const supabase = getDatabase();
+  
+  try {
+    const updates = {};
+    if (title !== undefined) updates.title = title;
+    if (content !== undefined) updates.content = content;
+    if (contentHtml !== undefined) updates.content_html = contentHtml;
+    if (timestampSeconds !== undefined) updates.timestamp_seconds = timestampSeconds;
+    if (isPrivate !== undefined) updates.is_private = isPrivate;
+    if (tags !== undefined) updates.tags = Array.isArray(tags) ? tags.join(',') : tags;
+    updates.updated_at = new Date().toISOString();
+    
+    const { error } = await supabase
+      .from('user_notes')
+      .update(updates)
+      .eq('id', noteId)
+      .eq('user_id', req.user.id);
+    
+    if (error) throw error;
+    
+    res.json({ message: 'Note updated successfully' });
+  } catch (error) {
+    console.error(error);
+    if (error.code === 'PGRST204') {
+      return res.status(404).json({ error: 'Note not found' });
     }
-  );
+    res.status(500).json({ error: 'Failed to update note' });
+  }
 });
 
 // Delete note
-router.delete('/:id', (req, res) => {
-  const db = getDatabase();
-
-  db.run(
-    `DELETE FROM user_notes WHERE id = ? AND user_id = ?`,
-    [req.params.id, req.user.id],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to delete note' });
-      }
-
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Note not found' });
-      }
-
-      // Update user notes count
-      updateUserNotesCount(req.user.id);
-
-      res.json({ message: 'Note deleted successfully' });
+router.delete('/:id', async (req, res) => {
+  const supabase = getDatabase();
+  
+  try {
+    const { error } = await supabase
+      .from('user_notes')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id);
+    
+    if (error) throw error;
+    
+    await updateUserNotesCount(req.user.id, supabase);
+    
+    res.json({ message: 'Note deleted successfully' });
+  } catch (error) {
+    console.error(error);
+    if (error.code === 'PGRST204') {
+      return res.status(404).json({ error: 'Note not found' });
     }
-  );
+    res.status(500).json({ error: 'Failed to delete note' });
+  }
 });
 
 // Export notes to PDF
@@ -277,55 +259,40 @@ router.post('/export/pdf', async (req, res) => {
   
   const { noteIds, videoId, format = 'detailed' } = req.body;
 
+  const supabase = getDatabase();
+  
   try {
-    const db = getDatabase();
+    let query = supabase
+      .from('user_notes')
+      .select('*, videos!user_notes_video_id_fkey(title:video_title, title_chinese:video_title_chinese, subjects(name_chinese:subject_name)), user_profiles(full_name:user_name)')
+      .eq('user_id', req.user.id);
     
-    let query = `
-      SELECT n.*, v.title as video_title, v.title_chinese as video_title_chinese,
-             s.name_chinese as subject_name, u.full_name as user_name
-      FROM user_notes n
-      JOIN videos v ON n.video_id = v.id
-      JOIN subjects s ON v.subject_id = s.id
-      JOIN user_profiles u ON n.user_id = u.user_uuid
-      WHERE n.user_id = ?
-    `;
-    let params = [req.user.id];
-
     if (noteIds && noteIds.length > 0) {
-      const placeholders = noteIds.map(() => '?').join(',');
-      query += ` AND n.id IN (${placeholders})`;
-      params.push(...noteIds);
+      query = query.in('id', noteIds);
     } else if (videoId) {
-      query += ` AND n.video_id = ?`;
-      params.push(videoId);
+      query = query.eq('video_id', videoId);
+    }
+    
+    const { data: notes, error } = await query
+      .order('videos.title', { ascending: true })
+      .order('timestamp_seconds', { ascending: true })
+      .order('created_at', { ascending: true });
+    
+    if (error) throw error;
+
+    if (notes.length === 0) {
+      return res.status(404).json({ error: 'No notes found' });
     }
 
-    query += ` ORDER BY v.title, n.timestamp_seconds ASC, n.created_at ASC`;
-
-    db.all(query, params, async (err, notes) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-
-      if (notes.length === 0) {
-        return res.status(404).json({ error: 'No notes found' });
-      }
-
-      try {
-        const htmlContent = generateNotesHTML(notes, format);
-        const pdf = await generatePDF(htmlContent);
-        
-        const fileName = `notes_${Date.now()}.pdf`;
-        
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-        res.send(pdf);
-        
-      } catch (pdfError) {
-        console.error('PDF generation error:', pdfError);
-        res.status(500).json({ error: 'Failed to generate PDF' });
-      }
-    });
+    const htmlContent = generateNotesHTML(notes, format);
+    const pdf = await generatePDF(htmlContent);
+    
+    const fileName = `notes_${Date.now()}.pdf`;
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(pdf);
+    
   } catch (error) {
     console.error('Export error:', error);
     res.status(500).json({ error: 'Export failed' });
@@ -430,21 +397,27 @@ async function generatePDF(htmlContent) {
 }
 
 // Helper function to update user notes count
-function updateUserNotesCount(userId) {
-  const db = getDatabase();
-  
-  db.run(
-    `UPDATE user_profiles SET 
-     notes_count = (SELECT COUNT(*) FROM user_notes WHERE user_id = ?),
-     updated_at = CURRENT_TIMESTAMP
-     WHERE user_uuid = ?`,
-    [userId, userId],
-    (err) => {
-      if (err) {
-        console.error('Failed to update user notes count:', err);
-      }
-    }
-  );
+async function updateUserNotesCount(userId, supabase) {
+  try {
+    const { count, error: countError } = await supabase
+      .from('user_notes')
+      .select('count(*)', { count: 'exact', head: true })
+      .eq('user_id', userId);
+    
+    if (countError) throw countError;
+    
+    const { error: updateError } = await supabase
+      .from('user_profiles')
+      .update({
+        notes_count: count,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_uuid', userId);
+    
+    if (updateError) throw updateError;
+  } catch (error) {
+    console.error('Failed to update user notes count:', error);
+  }
 }
 
 module.exports = router;

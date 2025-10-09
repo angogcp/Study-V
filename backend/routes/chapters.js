@@ -8,40 +8,34 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   const { subject_id, grade_level } = req.query;
   
-  const db = getDatabase();
+  const supabase = getDatabase();
   
-  let sql = `
-  SELECT c.*, 
-         s.name as subject_name, 
-         s.name_chinese as subject_name_chinese
-  FROM chapters c
-  INNER JOIN subjects s ON c.subject_id = s.id
-`;
-const params = [];
-const whereClauses = [];
+  let query = supabase
+    .from('chapters')
+    .select('*, subjects!inner(name, name_chinese)');
 
-if (subject_id) {
-  whereClauses.push('c.subject_id = ?');
-  params.push(subject_id);
-}
+  if (subject_id) {
+    query = query.eq('subject_id', subject_id);
+  }
 
-if (grade_level) {
-  whereClauses.push('c.grade_level = ?');
-  params.push(grade_level);
-}
+  if (grade_level) {
+    query = query.eq('grade_level', grade_level);
+  }
 
-if (whereClauses.length > 0) {
-  sql += ' WHERE ' + whereClauses.join(' AND ');
-}
+  const { data, error } = await query.order('sort_order', { ascending: true });
 
-sql += ' ORDER BY c.sort_order ASC';
-
-db.all(sql, params, (err, rows) => {
-  if (err) {
+  if (error) {
+    console.error('Supabase error:', error);
     return res.status(500).json({ error: 'Database error' });
   }
-  res.json(rows);
-});
+
+  const mappedData = data.map(({ subjects, ...ch }) => ({
+    ...ch,
+    subject_name: subjects?.name,
+    subject_name_chinese: subjects?.name_chinese
+  }));
+
+  res.json(mappedData);
 });
 
 // Create new chapter (admin only)
